@@ -25,6 +25,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ta9.JobService.Tests", "tes
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ta9.AuditService.Tests", "tests\Ta9.AuditService.Tests\Ta9.AuditService.Tests.csproj", "{80F91751-5988-419E-A4E2-E5F8281747EB}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ta9.IntegrationTests", "tests\Ta9.IntegrationTests\Ta9.IntegrationTests.csproj", "{C0C03B57-9907-499E-B9C0-789C5E87540E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -67,6 +69,10 @@ Global
 		{80F91751-5988-419E-A4E2-E5F8281747EB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{80F91751-5988-419E-A4E2-E5F8281747EB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{80F91751-5988-419E-A4E2-E5F8281747EB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C0C03B57-9907-499E-B9C0-789C5E87540E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C0C03B57-9907-499E-B9C0-789C5E87540E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C0C03B57-9907-499E-B9C0-789C5E87540E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C0C03B57-9907-499E-B9C0-789C5E87540E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -81,5 +87,6 @@ Global
 		{4365FF7A-8C9C-48AE-96EF-3D82397965F3} = {A5297894-614E-4B36-AC70-DA6A0A51DD18}
 		{2C55730A-596D-4796-89E8-366AE4DBBC0B} = {F9B3442E-6243-4C08-A245-4F22D15E68EC}
 		{80F91751-5988-419E-A4E2-E5F8281747EB} = {F9B3442E-6243-4C08-A245-4F22D15E68EC}
+		{C0C03B57-9907-499E-B9C0-789C5E87540E} = {F9B3442E-6243-4C08-A245-4F22D15E68EC}
 	EndGlobalSection
 EndGlobal
