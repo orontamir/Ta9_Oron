@@ -4,7 +4,7 @@ Work proceeds in small steps. Each step ends with **green tests and a commit**, 
 
 | Step | Scope | Tests | Est. |
 |---|---|---|---|
-| **0** | Repo skeleton: `.sln`, projects, `Directory.Build.props` (nullable, warnings-as-errors, central package versions), `.gitignore`, `.editorconfig`, `Ta9.ServiceDefaults` (Serilog, correlation id, ProblemDetails, health) | Build + one smoke test per test project | 0.5h |
+| **0** | Repo skeleton: `.sln`, projects, `Directory.Build.props` (nullable, C# 12), `Directory.Packages.props` (central package versions), `.gitignore`, `.editorconfig`, `Ta9.ServiceDefaults` (Serilog, correlation id, ProblemDetails, health) | `Ta9.ServiceDefaults.Tests`: correlation id validation, scope/AsyncLocal flow, middleware (generate / reuse / replace invalid), outgoing HttpClient propagation | 0.5h |
 | **1** | Processor domain: `Tokenizer`, `DocumentAnalyzer` (word count, unique, top 5, SHA-256, metadata) | Tokenization theory cases (punctuation, Hebrew, apostrophes, case, empty), top-5 tie-break, known SHA-256 vectors, determinism | 0.75h |
 | **2** | Processor engine + API: in-memory store (TTL), bounded channel, worker pool, per-job doc parallelism, cancellation, `/api/process` CRUD, validation, Swagger | Queue full → 503, idempotent POST, cancel, **concurrency bound respected** (instrumented analyzer counts max in-flight), per-doc failure isolation, API tests via WebApplicationFactory | 1.25h |
 | **3** | Contracts + Processor WS client: event envelope, serializer, outbox with ack, reconnect with backoff, progress throttling | Outbox: ack removes, unacked replayed on reconnect, bounded overflow, progress never queued. Throttle math. Serializer round-trip | 1h |

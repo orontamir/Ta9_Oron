@@ -11,3 +11,6 @@ doc/
 # Never commit feed configuration (may contain credentials)
 NuGet.Config
 nuget.config
+# Local artifacts / editor tooling
+*.bundle
+.github/copilot-instructions.md

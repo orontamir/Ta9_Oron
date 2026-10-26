@@ -1,0 +1,57 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{A5297894-614E-4B36-AC70-DA6A0A51DD18}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{F9B3442E-6243-4C08-A245-4F22D15E68EC}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ta9.ServiceDefaults", "src\Ta9.ServiceDefaults\Ta9.ServiceDefaults.csproj", "{CBCF336A-895A-47FE-A961-700F72EE0272}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ta9.JobService", "src\Ta9.JobService\Ta9.JobService.csproj", "{FF1B2C07-C5A4-451A-9559-D62DEA0D2844}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ta9.ProcessorService", "src\Ta9.ProcessorService\Ta9.ProcessorService.csproj", "{BBD56CDA-DBE6-4E67-9847-AB335EEA3B81}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ta9.AuditService", "src\Ta9.AuditService\Ta9.AuditService.csproj", "{A84373E4-1194-4681-AFE7-E531529283A8}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ta9.ServiceDefaults.Tests", "tests\Ta9.ServiceDefaults.Tests\Ta9.ServiceDefaults.Tests.csproj", "{47715363-BF86-4D70-970F-E3C1D941EF7A}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CBCF336A-895A-47FE-A961-700F72EE0272}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CBCF336A-895A-47FE-A961-700F72EE0272}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CBCF336A-895A-47FE-A961-700F72EE0272}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CBCF336A-895A-47FE-A961-700F72EE0272}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FF1B2C07-C5A4-451A-9559-D62DEA0D2844}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FF1B2C07-C5A4-451A-9559-D62DEA0D2844}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FF1B2C07-C5A4-451A-9559-D62DEA0D2844}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FF1B2C07-C5A4-451A-9559-D62DEA0D2844}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BBD56CDA-DBE6-4E67-9847-AB335EEA3B81}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BBD56CDA-DBE6-4E67-9847-AB335EEA3B81}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BBD56CDA-DBE6-4E67-9847-AB335EEA3B81}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BBD56CDA-DBE6-4E67-9847-AB335EEA3B81}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A84373E4-1194-4681-AFE7-E531529283A8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A84373E4-1194-4681-AFE7-E531529283A8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A84373E4-1194-4681-AFE7-E531529283A8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A84373E4-1194-4681-AFE7-E531529283A8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{47715363-BF86-4D70-970F-E3C1D941EF7A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{47715363-BF86-4D70-970F-E3C1D941EF7A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{47715363-BF86-4D70-970F-E3C1D941EF7A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{47715363-BF86-4D70-970F-E3C1D941EF7A}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{CBCF336A-895A-47FE-A961-700F72EE0272} = {A5297894-614E-4B36-AC70-DA6A0A51DD18}
+		{FF1B2C07-C5A4-451A-9559-D62DEA0D2844} = {A5297894-614E-4B36-AC70-DA6A0A51DD18}
+		{BBD56CDA-DBE6-4E67-9847-AB335EEA3B81} = {A5297894-614E-4B36-AC70-DA6A0A51DD18}
+		{A84373E4-1194-4681-AFE7-E531529283A8} = {A5297894-614E-4B36-AC70-DA6A0A51DD18}
+		{47715363-BF86-4D70-970F-E3C1D941EF7A} = {F9B3442E-6243-4C08-A245-4F22D15E68EC}
+	EndGlobalSection
+EndGlobal
