@@ -5,7 +5,7 @@
 | **Document** | High-Level Design (HLD) |
 | **System** | TA9 Document Processing (Job Service · Processor Service · Audit Service) |
 | **Stack** | C# / .NET 8 · ASP.NET Core · MongoDB 7 · Docker Compose |
-| **Diagrams** | Editable source: [`diagrams/ta9-hld.drawio`](diagrams/ta9-hld.drawio). Open with [app.diagrams.net](https://app.diagrams.net) or the VS Code *Draw.io Integration* extension. The Mermaid versions below render directly on GitHub |
+| **Diagrams** | Editable source: [`diagrams/ta9-hld.drawio`](diagrams/ta9-hld.drawio) (one page per diagram). Open with [app.diagrams.net](https://app.diagrams.net) or the VS Code *Draw.io Integration* extension. PNG renderings are in [`images`](images) |
 | **Detailed design** | [`../design`](../design) — architecture, API contracts, reliability, decision log (D1–D24) |
 
 | draw.io page | Section |
@@ -15,6 +15,7 @@
 | 3. Flow Diagram | [§6 Flow diagram](#6-flow-diagram) |
 | 4. Job State Machine | [§7 Job lifecycle](#7-job-lifecycle-state-machine) |
 | 5a / 5b / 5c. Sequence | [§8 Sequence diagrams](#8-sequence-diagrams) |
+| 6. Deployment | [§10 Deployment](#10-deployment) |
 
 ---
 
@@ -46,55 +47,7 @@ The system accepts batches of text documents, analyzes them asynchronously and e
 
 *draw.io page **1. Architecture***
 
-```mermaid
-flowchart LR
-    client([Client<br/>browser · Postman · curl])
-
-    subgraph JS["Job Service :5001 — public API, source of truth"]
-        ctrl[JobsController<br/>REST /api/jobs]
-        sse[JobEventStream<br/>SSE]
-        wse[ProcessorEventsEndpoint<br/>WS /ws/processor-events]
-        mgr[JobManager]
-        hnd[ProcessorEventHandler]
-        dsp[[JobDispatcher BG]]
-        rec[[JobReconciler BG]]
-        apub[[AuditPublisher BG]]
-        repo[(BroadcastingJobRepository<br/>Mongo or InMemory)]
-        bc[JobUpdateBroadcaster]
-    end
-
-    subgraph PS["Processor Service :5002 — stateless worker"]
-        pctrl[ProcessController<br/>REST /api/process]
-        q[ChannelJobQueue<br/>bounded 100]
-        wk[[JobWorkerService<br/>10 workers]]
-        run[JobRunner<br/>DOP 2 per job]
-        an[DocumentAnalyzer]
-        ob[EventOutbox]
-        wsc[[JobServiceEventsClient<br/>WS client]]
-    end
-
-    subgraph AS["Audit Service :5003"]
-        actrl[AuditController<br/>REST /api/audit]
-    end
-
-    mongo[(MongoDB<br/>ta9_jobs · ta9_audit)]
-
-    client -- REST --> ctrl
-    sse -- SSE --> client
-    ctrl --> mgr --> repo
-    dsp -- "REST POST/GET/DELETE /api/process" --> pctrl
-    rec -- "GET /api/process/id" --> pctrl
-    pctrl --> q --> wk --> run --> an
-    run --> ob --> wsc
-    wsc <-- "WebSocket events / acks" --> wse
-    wse --> hnd --> repo
-    dsp --> repo
-    rec --> hnd
-    repo --> bc --> sse
-    apub -- "REST POST /api/audit" --> actrl
-    repo -.-> mongo
-    actrl -.-> mongo
-```
+![Architecture diagram](images/architecture.png)
 
 ### 3.1 Services and responsibilities
 
@@ -144,149 +97,11 @@ flowchart LR
 
 ## 5. Class diagrams
 
-*draw.io pages **2a. Class Diagram — Job Service** and **2b. Class Diagram — Processor Service** (full members). Condensed version:*
+*draw.io pages **2a. Class Diagram — Job Service** and **2b. Class Diagram — Processor Service***
 
-```mermaid
-classDiagram
-    direction LR
-    class Job {
-        +Guid Id
-        +JobStatus Status
-        +int TotalDocuments
-        +int ProcessedDocuments
-        +int DispatchAttempts
-        +int RedispatchCount
-        +DateTimeOffset? NextDispatchAt
-        +DateTimeOffset? LeaseUntil
-        +bool AuditPublished
-        +long Version
-        +TryMarkQueued(now) bool
-        +TryStart(now) bool
-        +RecordProgress(n, now) bool
-        +TryComplete(summary, now) bool
-        +TryFail(reason, now) bool
-        +TryCancel(now) bool
-        +TryReturnToPending(now) bool
-    }
-    class JobStatus {
-        <<enumeration>>
-        Pending
-        Queued
-        Processing
-        Completed
-        Failed
-        Cancelled
-    }
-    class JobStateMachine {
-        <<static>>
-        +CanTransition(from, to) bool
-        +IsTerminal(status) bool
-    }
-    class JobDocument {
-        +string Id
-        +Guid JobId
-        +int Index
-        +string Content
-        +DocumentResultDto? Result
-    }
-    class IJobRepository {
-        <<interface>>
-        +TryUpdateAsync(job) bool
-        +TryClaimNextForDispatchAsync(now, lease) Job
-        +FindStaleActiveAsync(before, limit)
-        +FindUnpublishedTerminalAsync(limit)
-    }
-    class MongoJobRepository
-    class InMemoryJobRepository
-    class BroadcastingJobRepository {
-        <<decorator>>
-    }
-    class JobManager
-    class JobDispatcher {
-        <<BackgroundService>>
-    }
-    class JobReconciler {
-        <<BackgroundService>>
-    }
-    class ProcessorEventHandler
-    class IProcessorClient {
-        <<interface>>
-        +SubmitAsync(jobId, docs) DispatchResult
-        +GetAsync(jobId) ProcessorLookup
-        +CancelAsync(jobId) bool
-    }
+![Class diagram — Job Service](images/class-job-service.png)
 
-    Job --> JobStatus
-    Job ..> JobStateMachine
-    Job "1" *-- "1..1000" JobDocument
-    MongoJobRepository ..|> IJobRepository
-    InMemoryJobRepository ..|> IJobRepository
-    BroadcastingJobRepository ..|> IJobRepository
-    JobManager ..> IJobRepository
-    JobDispatcher ..> IJobRepository
-    JobDispatcher ..> IProcessorClient
-    JobReconciler ..> IProcessorClient
-    JobReconciler ..> ProcessorEventHandler
-    ProcessorEventHandler ..> IJobRepository
-```
-
-```mermaid
-classDiagram
-    direction LR
-    class ProcessingService {
-        +Submit(request) SubmitResult
-        +Cancel(jobId) CancelOutcome
-    }
-    class ProcessingJob {
-        +Guid JobId
-        +ProcessingStatus Status
-        +TryStart(now) bool
-        +TryComplete(results, summary, now) bool
-        +TryCancel(now) bool
-    }
-    class IJobQueue {
-        <<interface>>
-        +TryEnqueue(job) bool
-        +ReadAllAsync(ct)
-    }
-    class ChannelJobQueue
-    class JobWorkerService {
-        <<BackgroundService>>
-    }
-    class JobRunner {
-        +RunAsync(job, ct)
-    }
-    class IDocumentAnalyzer {
-        <<interface>>
-        +Analyze(content) DocumentAnalysis
-    }
-    class DocumentAnalyzer
-    class IJobEventPublisher {
-        <<interface>>
-    }
-    class WebSocketJobEventPublisher
-    class EventOutbox {
-        +TryAddLifecycle(envelope) bool
-        +OfferProgress(envelope)
-        +TakeDue(ackTimeout)
-        +Acknowledge(eventId) bool
-    }
-    class JobServiceEventsClient {
-        <<BackgroundService>>
-    }
-
-    ProcessingService ..> IJobQueue
-    ProcessingService ..> ProcessingJob
-    ChannelJobQueue ..|> IJobQueue
-    JobWorkerService ..> IJobQueue
-    JobWorkerService ..> JobRunner
-    JobRunner ..> IDocumentAnalyzer
-    JobRunner ..> IJobEventPublisher
-    DocumentAnalyzer ..|> IDocumentAnalyzer
-    WebSocketJobEventPublisher ..|> IJobEventPublisher
-    WebSocketJobEventPublisher ..> EventOutbox
-    JobServiceEventsClient ..> EventOutbox
-```
+![Class diagram — Processor Service](images/class-processor-service.png)
 
 ### 5.1 Data model (MongoDB)
 
@@ -302,36 +117,7 @@ Documents live in a separate collection so that a 1,000-document job never appro
 
 *draw.io page **3. Flow Diagram** (swim lanes per service)*
 
-```mermaid
-flowchart TD
-    A([Client: POST /api/jobs]) --> B{Valid?}
-    B -- No --> B1([400 ValidationProblem])
-    B -- Yes --> C[Store documents, then job = Pending<br/>201 Created · signal dispatcher]
-    C --> D[Dispatcher: atomic claim with lease]
-    D --> E[POST /api/process]
-    E --> F{Processor queue full?}
-    F -- Yes --> G{{503 + Retry-After}}
-    F -- No --> H[Enqueue · 202 Accepted]
-    G --> I[Retry after hint<br/>attempt not counted] --> D
-    E -. unreachable / 5xx .-> J{Attempts ≥ 5?}
-    J -- No --> K[Backoff 2 s→60 s + jitter] --> D
-    J -- Yes --> X([Job = Failed])
-    E -. 4xx .-> X
-    H --> L[Job = Queued]
-    H --> M[Worker: JobStarted]
-    M --> N[Analyze documents<br/>DOP 2 · per-document try/catch]
-    N --> O{All documents failed?}
-    O -- Yes --> P[JobFailed]
-    O -- No --> Q[JobCompleted: summary + results]
-    P --> R[Outbox → WebSocket<br/>resend until ack]
-    Q --> R
-    R --> S{Legal transition?}
-    S -- No --> S1[Ignore, still ack]
-    S -- Yes --> T[Save results, then status · ack]
-    T --> U[Broadcast to SSE subscribers]
-    U --> V[AuditPublisher → POST /api/audit]
-    V --> W([Job finished])
-```
+![Flow diagram](images/flow.png)
 
 **Safety net (reconciler, every 30 s):** for `Queued`/`Processing` jobs silent for more than 60 s it calls `GET /api/process/{id}`. Running → refresh progress. Finished → apply the result. **404** (processor restarted) → back to `Pending` and redispatch (max 3, then `Failed`). Processor unreachable → leave the job alone.
 
@@ -339,25 +125,7 @@ flowchart TD
 
 *draw.io page **4. Job State Machine***
 
-```mermaid
-stateDiagram-v2
-    [*] --> Pending : POST /api/jobs
-    Pending --> Queued : processor accepted (202) / first event
-    Pending --> Failed : retries exhausted / 4xx
-    Queued --> Processing : JobStarted / JobProgress
-    Queued --> Completed : JobCompleted (Started lost)
-    Processing --> Completed : JobCompleted
-    Queued --> Failed : JobFailed
-    Processing --> Failed : JobFailed
-    Queued --> Pending : processor lost job (404)
-    Processing --> Pending : processor lost job (404)
-    Pending --> Cancelled : cancel
-    Queued --> Cancelled : cancel
-    Processing --> Cancelled : cancel
-    Completed --> [*]
-    Failed --> [*]
-    Cancelled --> [*]
-```
+![Job state machine](images/state-machine.png)
 
 Terminal states accept nothing, so duplicates, replays and late events are no-ops. Every write goes through optimistic concurrency (load → mutate → replace if `version` is unchanged → retry), so the WS handler, dispatcher, reconciler and cancel requests never overwrite each other.
 
@@ -366,92 +134,17 @@ Terminal states accept nothing, so duplicates, replays and late events are no-op
 ### 8.1 Happy path
 *draw.io page **5a. Sequence — Happy Path** (30 numbered messages, including SSE and audit)*
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor C as Client
-    participant API as Job API
-    participant DB as MongoDB
-    participant D as JobDispatcher
-    participant P as Processor
-    participant W as Worker
-    participant WS as WS endpoint + handler
-    participant A as Audit Service
-
-    C->>API: POST /api/jobs
-    API->>DB: insert documents, then job (Pending)
-    API-->>C: 201 Created {id}
-    API->>D: signal
-    D->>DB: claim (findOneAndUpdate + lease)
-    D->>P: POST /api/process {jobId, documents}
-    P->>W: enqueue (bounded channel)
-    P-->>D: 202 Accepted
-    D->>DB: Pending → Queued
-    W->>WS: JobStarted (WebSocket)
-    WS->>DB: Queued → Processing
-    WS-->>W: ack
-    W->>W: analyze documents (DOP 2)
-    W->>WS: JobProgress (throttled)
-    W->>WS: JobCompleted {summary, results}
-    WS->>DB: save results, then Completed
-    WS-->>W: ack
-    Note over C,API: SSE pushed every change: Pending → Processing → Completed
-    API->>A: POST /api/audit (AuditPublisher)
-    A-->>API: 201 Created
-    C->>API: GET /api/jobs/{id}/results
-    API-->>C: 200 results
-```
+![Sequence — happy path](images/sequence-happy-path.png)
 
 ### 8.2 Processor restart mid-job
 *draw.io page **5b. Sequence — Processor Restart***
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant Old as Processor (old)
-    participant New as Processor (new)
-    participant R as JobReconciler
-    participant DB as MongoDB
-    participant D as JobDispatcher
-    participant WS as WS endpoint
-
-    Note over Old: crashes while Processing (memory lost)
-    R->>DB: find Queued/Processing silent > 60 s
-    R->>New: GET /api/process/{id}
-    New-->>R: 404 Not Found
-    R->>DB: if still stale → Pending, redispatchCount++
-    R->>D: signal
-    D->>New: POST /api/process
-    New-->>D: 202 Accepted
-    New->>WS: JobStarted … JobCompleted
-    WS->>DB: Completed
-```
+![Sequence — processor restart](images/sequence-processor-restart.png)
 
 ### 8.3 WebSocket disconnect, reconnect and replay
 *draw.io page **5c. Sequence — WebSocket Reconnect***
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant R as JobRunner
-    participant O as EventOutbox
-    participant C as WS client
-    participant E as WS endpoint
-    participant H as Handler + MongoDB
-
-    R->>O: TryAddLifecycle(JobCompleted E1)
-    O->>C: TakeDue → [E1]
-    C->>E: JobCompleted (E1)
-    Note over C,E: connection drops before the ack
-    C->>O: MarkDisconnected (E1 kept, progress dropped)
-    C->>C: reconnect, backoff 1 s → 30 s ± 20%
-    C->>E: connect
-    C->>O: MarkConnected → unacked due again
-    C->>E: replay JobCompleted (E1)
-    E->>H: HandleAsync(E1) → Applied, or Ignored if already applied
-    E-->>C: ack(E1)
-    C->>O: Acknowledge(E1) → removed
-```
+![Sequence — WebSocket reconnect](images/sequence-websocket-reconnect.png)
 
 ## 9. Non-functional design
 
@@ -491,21 +184,9 @@ sequenceDiagram
 
 ## 10. Deployment
 
-```mermaid
-flowchart LR
-    subgraph compose["docker compose (network: ta9_default)"]
-        mongo[(mongo:7.0<br/>:27017 · volume mongo-data)]
-        job[job-service<br/>:5001 → 8080]
-        proc[processor-service<br/>:5002 → 8080]
-        audit[audit-service<br/>:5003 → 8080]
-    end
-    job -- depends_on healthy --> mongo
-    audit -- depends_on healthy --> mongo
-    proc -- depends_on healthy --> job
-    proc -- "ws://job-service:8080/ws/processor-events" --> job
-    job -- "http://processor-service:8080" --> proc
-    job -- "http://audit-service:8080" --> audit
-```
+*draw.io page **6. Deployment***
+
+![Deployment](images/deployment.png)
 
 - **Images:** one multi-stage `Dockerfile` (`PROJECT` build arg) with a cached restore layer, the `aspnet:8.0` runtime and a non-root user. `Dockerfile.prebuilt` serves networks with TLS inspection.
 - **Health checks:** `curl /health/ready` per service. Startup order: Mongo → Job + Audit → Processor.
