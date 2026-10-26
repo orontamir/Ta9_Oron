@@ -73,6 +73,10 @@ public sealed class RecordingJobEventPublisher : IJobEventPublisher
     public IReadOnlyList<string> TypesFor(Guid jobId) =>
         _events.Where(e => e.JobId == jobId).Select(e => e.Type).ToList();
 
+    /// <summary>Lifecycle events only (progress is throttled and asserted separately).</summary>
+    public IReadOnlyList<string> LifecycleFor(Guid jobId) =>
+        TypesFor(jobId).Where(type => type != "JobProgress").ToList();
+
     public void JobStarted(ProcessingJob job)
     {
         if (ThrowOnStarted?.Invoke(job) == true)

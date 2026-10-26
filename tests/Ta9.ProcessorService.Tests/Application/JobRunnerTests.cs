@@ -32,7 +32,7 @@ public class JobRunnerTests
         job.Results!.Select(r => r.WordCount).Should().Equal(2, 3, 0);
         job.Results![1].TopWords.Should().Equal(new WordCountDto("c", 3));
         job.Summary.Should().BeEquivalentTo(new { TotalDocuments = 3, Succeeded = 3, Failed = 0, TotalWords = 5L });
-        _events.TypesFor(job.JobId).Should().Equal("JobStarted", "JobCompleted");
+        _events.LifecycleFor(job.JobId).Should().Equal("JobStarted", "JobCompleted");
     }
 
     [Fact]
@@ -51,7 +51,7 @@ public class JobRunnerTests
         failed.Index.Should().Be(1);
         failed.Error.Should().Contain(nameof(InvalidOperationException));
         failed.Sha256.Should().BeNull();
-        _events.TypesFor(job.JobId).Should().EndWith("JobCompleted");
+        _events.LifecycleFor(job.JobId).Should().Equal("JobStarted", "JobCompleted");
     }
 
     [Fact]
@@ -64,7 +64,7 @@ public class JobRunnerTests
 
         job.Status.Should().Be(ProcessingStatus.Failed);
         job.FailureReason.Should().NotBeNullOrWhiteSpace();
-        _events.TypesFor(job.JobId).Should().Equal("JobStarted", "JobFailed");
+        _events.LifecycleFor(job.JobId).Should().Equal("JobStarted", "JobFailed");
     }
 
     [Fact]
@@ -115,7 +115,7 @@ public class JobRunnerTests
         await CreateRunner(analyzer, docParallelism: 1).RunAsync(job, shutdown.Token);
 
         job.Status.Should().Be(ProcessingStatus.Processing, "the Job Service reconciler recovers abandoned jobs");
-        _events.TypesFor(job.JobId).Should().Equal("JobStarted");
+        _events.LifecycleFor(job.JobId).Should().Equal("JobStarted");
     }
 
     [Theory]

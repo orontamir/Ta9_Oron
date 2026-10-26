@@ -7,7 +7,6 @@ namespace Ta9.ProcessorService.Api;
 
 [ApiController]
 [Route("api/process")]
-[Produces("application/json")]
 public sealed class ProcessController(ProcessingService processing, IOptions<ProcessingOptions> options) : ControllerBase
 {
     /// <summary>Enqueues a job for processing. Idempotent by jobId.</summary>

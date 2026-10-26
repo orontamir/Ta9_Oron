@@ -102,7 +102,7 @@ public sealed class ProcessApiTests : IDisposable
     [Fact]
     public async Task Post_returns_503_with_retry_after_when_queue_is_full()
     {
-        using var gate = new ManualResetEventSlim(false);
+        var gate = new ManualResetEventSlim(false);
         var blocking = new DelegateAnalyzer(content =>
         {
             gate.Wait(TimeSpan.FromSeconds(10));
@@ -112,6 +112,7 @@ public sealed class ProcessApiTests : IDisposable
             ("Processing:MaxConcurrentJobs", "1"),
             ("Processing:QueueCapacity", "1"),
             ("Processing:RetryAfterSeconds", "7"));
+        _disposables.Add(gate); // disposed after the host stops, so blocked analyzers never see a disposed gate
 
         try
         {
@@ -134,13 +135,14 @@ public sealed class ProcessApiTests : IDisposable
     [Fact]
     public async Task Delete_cancels_a_running_job()
     {
-        using var gate = new ManualResetEventSlim(false);
+        var gate = new ManualResetEventSlim(false);
         var blocking = new DelegateAnalyzer(content =>
         {
             gate.Wait(TimeSpan.FromSeconds(10));
             return DelegateAnalyzer.Real.Analyze(content);
         });
         var client = CreateClient(blocking);
+        _disposables.Add(gate);
 
         try
         {
