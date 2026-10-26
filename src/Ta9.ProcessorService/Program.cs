@@ -9,6 +9,7 @@ public class Program
     {
         var builder = WebApplication.CreateBuilder(args);
         builder.AddServiceDefaults("processor-service");
+        builder.Services.AddProcessing(builder.Configuration);
 
         builder.Services
             .AddControllers()

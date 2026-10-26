@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Ta9.ServiceDefaults\Ta9.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\Ta9.Contracts\Ta9.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

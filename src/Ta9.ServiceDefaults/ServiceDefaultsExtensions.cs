@@ -38,7 +38,9 @@ public static class ServiceDefaultsExtensions
                 configuration.WriteTo.Console(
                     outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Service} {CorrelationId} {JobId} {Message:lj}{NewLine}{Exception}");
             }
-        });
+        },
+        // Each host owns its logger; the static Log.Logger is never touched (several hosts run side by side in tests).
+        preserveStaticLogger: true);
 
         builder.Services.AddProblemDetails();
         builder.Services.AddTransient<CorrelationIdHandler>();
