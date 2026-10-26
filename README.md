@@ -10,6 +10,7 @@ Three .NET 8 services that process documents asynchronously and talk over **REST
 
 For each document the processor computes the word count, unique word count, top-5 words, SHA-256, character count, line count, average word length and longest word.
 
+> **WebSocket disconnect/reconnect behavior** (outbox, acks, backoff, idempotency, reconciler, tests): [`docs/websocket/WEBSOCKET.md`](docs/websocket/WEBSOCKET.md) · Word: [`TA9-WebSocket-Behavior.docx`](docs/websocket/TA9-WebSocket-Behavior.docx).
 > **Concurrency & Performance** (chosen strategy, advantages, limitations, diagrams): [`docs/concurrency/CONCURRENCY.md`](docs/concurrency/CONCURRENCY.md) · Word: [`TA9-Concurrency-Performance.docx`](docs/concurrency/TA9-Concurrency-Performance.docx).
 > **Software Test Description (STD)**: test strategy, environment, traceability to the requirements, all 404 automated test cases, manual procedures and defects: [`docs/testing/STD.md`](docs/testing/STD.md) · Word: [`TA9-STD.docx`](docs/testing/TA9-STD.docx).
 > **Installation Guide** (prerequisites, local and Docker Desktop deployment, errors encountered and fixes): [`docs/installation/INSTALLATION.md`](docs/installation/INSTALLATION.md) · Word: [`TA9-Installation-Guide.docx`](docs/installation/TA9-Installation-Guide.docx).
@@ -111,6 +112,8 @@ POST /api/process ─► bounded Channel (100) ─► 10 worker loops ─► Par
 - **Limits:** 10 × 2 can slightly oversubscribe a small machine; all numbers are configurable (`Processing__*`). The queue is in memory, and the reconciler recovers it after a processor restart.
 
 ## 6. WebSocket disconnect / reconnect behavior
+Full description with state diagrams, alternatives, limitations and tests: [`docs/websocket/WEBSOCKET.md`](docs/websocket/WEBSOCKET.md).
+
 - The **processor is the client** and connects to `ws://job-service/ws/processor-events`. It reconnects with exponential backoff from 1s to 30s with ±20% jitter.
 - **Lifecycle events** (started, completed, failed, cancelled) sit in a bounded **outbox** (10k) until the Job Service **acks** them. They are resent after every reconnect and when no ack arrives within 30s. Delivery is **at-least-once**.
 - **Progress events** are best-effort: coalesced to the latest per job, dropped while disconnected, never replayed.

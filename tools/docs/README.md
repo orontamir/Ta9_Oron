@@ -8,6 +8,7 @@ Regenerate the diagram images and the Word documents from their sources.
 | `docs/hld/HLD.md` | `docs/hld/TA9-HLD.docx` | `npm run hld` |
 | `docs/installation/INSTALLATION.md` | `docs/installation/TA9-Installation-Guide.docx` | `npm run install-guide` |
 | `docs/testing/STD.md` | `docs/testing/TA9-STD.docx` | `npm run std` |
+| `docs/websocket/WEBSOCKET.md` | `docs/websocket/TA9-WebSocket-Behavior.docx` | `npm run websocket` |
 | `docs/concurrency/CONCURRENCY.md` | `docs/concurrency/TA9-Concurrency-Performance.docx` | `npm run concurrency` |
 
 Setup: Node.js 18+, then `npm install`. Rendering needs Google Chrome or Chromium; set `CHROME_PATH` if it is not in the default location.
