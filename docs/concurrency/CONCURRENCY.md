@@ -126,16 +126,68 @@ The system therefore **slows down gracefully under overload instead of failing o
 - **Streaming results** (or REST pull) for very large jobs, and content by reference instead of inline.
 - **Continuous dispatch pipeline** (semaphore instead of batches) to remove head-of-line blocking.
 
-## 7. Verification
+## 7. Tests for this section
 
-| Evidence | What it proves |
+The complete catalog of the system's tests, with strategy, environment, traceability and results, is the **Software Test Description (STD)** — `docs/testing/TA9-STD.docx` (Markdown: `docs/testing/STD.md`). This chapter lists only the tests that verify **§4 Concurrency & Performance**. The **STD ID** column is the identifier of the same test case in the STD, so each test can be looked up there; *Theory ×N* runs N data rows, *×2 stores* runs against InMemory and MongoDB.
+
+### 7.1 What is verified
+
+| Claim in this document | Verified by (STD IDs below) |
 |---|---|
-| `JobRunnerTests.Never_exceeds_document_parallelism` (DOP 1 and 3) | Documents of one job never exceed the configured parallelism |
-| `JobWorkerServiceTests.Processes_many_jobs_with_bounded_total_concurrency` | 12 jobs × 10 documents with 3 workers × DOP 2 → never more than 6 analyses at once |
-| `ChannelJobQueueTests.Rejects_when_capacity_is_reached` | The queue is bounded |
-| `ProcessApiTests.Post_returns_503_with_retry_after_when_queue_is_full` | Overload returns 503 with the Retry-After hint |
-| `JobDispatcherTests.Busy_processor_delays_the_job_without_consuming_an_attempt` and `Dispatches_in_bounded_parallel_batches` | Backpressure is honored; dispatch concurrency is bounded |
-| `JobRepositoryContract.Concurrent_updates_never_lose_a_write` (InMemory + MongoDB) | 20 concurrent writers, no lost update |
-| `JobRepositoryContract.Concurrent_claims_never_hand_out_the_same_job_twice` | Leases are atomic |
-| **`EndToEndTests.Ten_concurrent_jobs_of_1000_documents_complete_with_bounded_parallelism`** | The assignment's scenario end to end: 10 × 1,000 documents all Completed, every document analyzed exactly once, **≤ 20** concurrent analyses |
-| Manual MT-03 on Docker Desktop (`smoke-test.ps1 -Jobs 10 -Documents 1000`) | Every job Completed with 1,000 / 1,000 documents succeeded |
+| Documents of one job never exceed `DocParallelismPerJob` | `JobRunnerTests.Never_exceeds_document_parallelism` |
+| Total concurrent analyses never exceed `MaxConcurrentJobs × DocParallelismPerJob` | `JobWorkerServiceTests.Processes_many_jobs_with_bounded_total_concurrency`; E2E with 10 × 1,000 documents (≤ 20) |
+| The queue is bounded; overload returns 503 + Retry-After and is honored without counting a failure | `ChannelJobQueueTests`, `ProcessingServiceTests`, `ProcessApiTests`, `HttpProcessorClientTests`, `JobDispatcherTests.Busy_processor…` |
+| No lost updates between concurrent writers; a job is never dispatched twice at once | `JobRepositoryContract` (InMemory + MongoDB), `JobRepositoryExtensionsTests` |
+| Failures, cancellation and shutdown never break the worker pool | `JobRunnerTests`, `JobWorkerServiceTests`, `ProcessingJobTests` |
+| Slow consumers never block producers; per-connection ordering | `InMemoryJobUpdateBroadcasterTests`, `ProcessorEventsEndpointTests` |
+| **The assignment scenario: 10 concurrent jobs × 1,000 documents** | **E2E test below** and manual **MT-03** |
+
+### 7.2 Automated tests
+
+| STD ID | Test case | Test class | Level | Kind |
+|---|---|---|---|---|
+| PS-032 | Never exceeds document parallelism | `JobRunnerTests` | Unit | Theory ×2 |
+| PS-033 | Publishes throttled progress | `JobRunnerTests` | Unit | Fact |
+| PS-027 | Isolates a failing document | `JobRunnerTests` | Unit | Fact |
+| PS-030 | Stops when cancelled mid run without reporting completion | `JobRunnerTests` | Unit | Fact |
+| PS-031 | Abandons job silently on shutdown | `JobRunnerTests` | Unit | Fact |
+| PS-034 | Processes many jobs with bounded total concurrency | `JobWorkerServiceTests` | Unit | Fact |
+| PS-035 | A crashing job does not kill the worker | `JobWorkerServiceTests` | Unit | Fact |
+| PS-036 | Stops cleanly | `JobWorkerServiceTests` | Unit | Fact |
+| PS-066 | Rejects when capacity is reached | `ChannelJobQueueTests` | Unit | Fact |
+| PS-067 | Delivers jobs in fifo order and frees capacity | `ChannelJobQueueTests` | Unit | Fact |
+| PS-058 | Rejects when queue is full and forgets the job | `ProcessingServiceTests` | Unit | Fact |
+| PS-057 | Resubmitting the same job id is idempotent | `ProcessingServiceTests` | Unit | Fact |
+| PS-062 | Reports every ten percent but not at completion | `ProgressThrottleTests` | Unit | Fact |
+| PS-063 | Reports when the interval elapses between steps | `ProgressThrottleTests` | Unit | Fact |
+| PS-065 | Out of order counts do not produce duplicate reports | `ProgressThrottleTests` | Unit | Fact |
+| PS-052 | Cancel moves to cancelled and signals the token | `ProcessingJobTests` | Unit | Fact |
+| PS-053 | Completion after cancel is ignored | `ProcessingJobTests` | Unit | Fact |
+| PS-051 | Completes only from processing and releases documents | `ProcessingJobTests` | Unit | Fact |
+| PS-069 | Removes only finished jobs older than cutoff | `InMemoryProcessingJobStoreTests` | Unit | Fact |
+| PS-099 | Post returns 503 with retry after when queue is full | `ProcessApiTests` | Component | Fact |
+| PS-095 | Post same job twice returns 200 the second time | `ProcessApiTests` | Component | Fact |
+| PS-100 | Delete cancels a running job | `ProcessApiTests` | Component | Fact |
+| JS-017 | Submit 503 is busy with the retry after hint | `HttpProcessorClientTests` | Unit | Fact |
+| JS-056 | Busy processor delays the job without consuming an attempt | `JobDispatcherTests` | Unit | Fact |
+| JS-061 | Dispatches in bounded parallel batches | `JobDispatcherTests` | Unit | Fact |
+| JS-060 | A crashed dispatch is retried after the lease expires | `JobDispatcherTests` | Unit | Fact |
+| JS-062 | Background loop dispatches new jobs when signalled | `JobDispatcherTests` | Unit | Fact |
+| JS-037 | Concurrent updates never lose a write | `JobRepositoryContract` | Contract (InMemory + MongoDB) | Fact · ×2 stores |
+| JS-035 | Update with a stale version is rejected | `JobRepositoryContract` | Contract (InMemory + MongoDB) | Fact · ×2 stores |
+| JS-042 | Concurrent claims never hand out the same job twice | `JobRepositoryContract` | Contract (InMemory + MongoDB) | Fact · ×2 stores |
+| JS-039 | Claim leases the due pending job until the lease expires | `JobRepositoryContract` | Contract (InMemory + MongoDB) | Fact · ×2 stores |
+| JS-084 | Reloads and retries on conflict | `JobRepositoryExtensionsTests` | Unit | Fact |
+| JS-085 | Gives up after max attempts | `JobRepositoryExtensionsTests` | Unit | Fact |
+| JS-140 | Events are processed in order per connection | `ProcessorEventsEndpointTests` | Component | Fact |
+| JS-091 | Slow subscriber keeps the latest snapshots and never blocks the publisher | `InMemoryJobUpdateBroadcasterTests` | Unit | Fact |
+| E2E-002 | Ten concurrent jobs of 1000 documents complete with bounded parallelism | `EndToEndTests` | Integration (E2E) | Fact |
+
+### 7.3 Manual test
+
+| STD ID | Procedure | Expected result | Status |
+|---|---|---|---|
+| MT-03 | `powershell -ExecutionPolicy Bypass -File .\scripts\smoke-test.ps1 -Jobs 10 -Documents 1000` against the Docker Desktop stack | All 10 jobs Completed, 1,000 / 1,000 documents succeeded each | Passed (2026-10-26) |
+
+All automated tests listed here passed in the latest full run (404 / 404).
+

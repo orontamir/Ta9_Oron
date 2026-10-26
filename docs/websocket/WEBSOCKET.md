@@ -149,36 +149,95 @@ Lost lifecycle events are therefore recovered within about 60–90 s.
 | L7 | **No authentication on the WebSocket** | Any client that can reach the endpoint could send events | Out of scope by assignment; production: mTLS or a signed token on connect |
 | L8 | **Large completion messages** | ~0.5 MB per 1,000-document `JobCompleted`; a replay resends the whole payload | Fine at this scale; for larger jobs send a summary and let the Job Service pull results via REST |
 
-## 5. Tests
+## 5. Tests for this section
 
-### 5.1 Automated tests
+The complete catalog of the system's tests, with strategy, environment, traceability and results, is the **Software Test Description (STD)** — `docs/testing/TA9-STD.docx` (Markdown: `docs/testing/STD.md`). This chapter lists only the tests that verify **the WebSocket disconnect / reconnect and duplicate-event behavior (§3.3 and §5 of the assignment)**. The **STD ID** column is the identifier of the same test case in the STD, so each test can be looked up there; *Theory ×N* runs N data rows, *×2 stores* runs against InMemory and MongoDB.
+Tests of the other §5 scenarios (invalid input, processor unreachable, storage outage) are traced in the STD under requirements **R8**, **R9** and **R14**.
 
-| Test class (project) | Level | What it verifies |
-|---|---|---|
-| `EventOutboxTests` (Processor) | Unit | Rejects lifecycle events beyond capacity · Takes unsent events in order only once · Resends events whose ack timed out · Acknowledge removes the event · Reconnect makes unacknowledged events due again · Lifecycle events are buffered while disconnected · Progress is dropped while disconnected · Progress is coalesced to the latest per job and not kept for ack · Terminal event discards pending progress of the job · Disconnect discards pending progress · Wait for work completes when an event is added |
-| `JobServiceEventsClientTests` (Processor) | Component — **real WebSocket** against an in-memory fake Job Service | Delivers events in order and clears outbox on ack · Buffers events until the Job Service becomes reachable · **Replays unacknowledged events after reconnect** · **Resends when ack times out without reconnect** · Sends progress while connected without waiting for ack |
-| `ProcessorEventSerializerTests` (Processor) | Unit | Envelope round trips with typed payload · camelCase and string enums on the wire · Ack round trips · Non-ack messages are ignored |
-| `WebSocketJobEventPublisherTests` (Processor) | Unit | Lifecycle events queued with job metadata · Completed event carries summary and results · Progress dropped while disconnected · Full outbox does not throw |
-| `ExponentialBackoffTests` (ServiceDefaults) | Unit | Exponential growth up to the cap with ±20% jitter · Jitter spreads retries |
-| `ProcessorEventsEndpointTests` (Job Service) | Component — **real WebSocket** against the endpoint | Handled events are acknowledged and applied · **Duplicates and unknown jobs are acknowledged too** · Unreadable message is skipped and the connection keeps working · **Events are processed in order per connection** · Plain HTTP request is rejected · **Event that cannot be stored is not acknowledged** |
-| `ProcessorEventHandlerTests` (Job Service) | Unit | Started moves a queued job to processing · Events arriving before the dispatcher recorded the 202 still apply · Progress never goes backwards · Completed stores results then completes the job · **Replayed completion is ignored** · Late completion of a cancelled job is ignored · **Out-of-order Started after Completed is ignored** · Unknown job / event type / newer schema / malformed payload ignored · Storage failure propagates (no ack) |
-| `JobReconcilerTests` (Job Service) | Unit | **Lost completion / failure events are recovered** · Job lost by a restarted processor is redispatched · Fails after too many redispatches · Unreachable processor leaves the job alone · Event arriving during reconciliation wins over redispatch |
-| `EndToEndTests` (Integration) | E2E — three services, real WebSocket, MongoDB | Job flows through the processor WebSocket and audit · **Job lost by a processor restart is redispatched and completes** (old instance dies mid-job, new instance reconnects its WebSocket) |
+### 5.1 What is verified
 
-All of these tests pass in the latest run (404 / 404 automated tests passed).
+| Behavior described in this document | Verified by |
+|---|---|
+| Lifecycle events are kept until acked, resent after reconnect or ack timeout; progress coalesced/dropped | `EventOutboxTests`, `WebSocketJobEventPublisherTests` |
+| Real reconnect over a WebSocket: buffering while unreachable, replay after a drop, resend on ack timeout | `JobServiceEventsClientTests` (real WebSocket against a fake Job Service) |
+| Reconnect backoff grows exponentially with jitter | `ExponentialBackoffTests` |
+| The wire contract (envelope, enums, ack) is stable | `ProcessorEventSerializerTests` |
+| Ack only after handling; duplicates and unknown jobs acked; storage failure not acked; order per connection | `ProcessorEventsEndpointTests` (real WebSocket against the endpoint) |
+| Duplicates, replays and out-of-order events never change state twice or move it backwards | `ProcessorEventHandlerTests` |
+| Events lost despite the outbox are recovered by the reconciler | `JobReconcilerTests` |
+| End to end, including a processor that dies mid-job and a new instance that reconnects | `EndToEndTests` |
 
-### 5.2 Manual verification (Docker Desktop)
+### 5.2 Automated tests
+
+| STD ID | Test case | Test class | Level | Kind |
+|---|---|---|---|---|
+| PS-078 | Rejects lifecycle events beyond capacity | `EventOutboxTests` | Unit | Fact |
+| PS-079 | Takes unsent events in order only once | `EventOutboxTests` | Unit | Fact |
+| PS-080 | Resends events whose ack timed out | `EventOutboxTests` | Unit | Fact |
+| PS-081 | Acknowledge removes the event | `EventOutboxTests` | Unit | Fact |
+| PS-082 | Reconnect makes unacknowledged events due again | `EventOutboxTests` | Unit | Fact |
+| PS-083 | Lifecycle events are buffered while disconnected | `EventOutboxTests` | Unit | Fact |
+| PS-084 | Progress is dropped while disconnected | `EventOutboxTests` | Unit | Fact |
+| PS-085 | Progress is coalesced to the latest per job and not kept for ack | `EventOutboxTests` | Unit | Fact |
+| PS-086 | Terminal event discards pending progress of the job | `EventOutboxTests` | Unit | Fact |
+| PS-087 | Disconnect discards pending progress | `EventOutboxTests` | Unit | Fact |
+| PS-088 | Wait for work completes when an event is added | `EventOutboxTests` | Unit | Fact |
+| PS-089 | Delivers events in order and clears outbox on ack | `JobServiceEventsClientTests` | Component | Fact |
+| PS-090 | Buffers events until the job service becomes reachable | `JobServiceEventsClientTests` | Component | Fact |
+| PS-091 | Replays unacknowledged events after reconnect | `JobServiceEventsClientTests` | Component | Fact |
+| PS-092 | Resends when ack times out without reconnect | `JobServiceEventsClientTests` | Component | Fact |
+| PS-093 | Sends progress while connected without waiting for ack | `JobServiceEventsClientTests` | Component | Fact |
+| SD-012 | Grows exponentially up to the cap with jitter | `ExponentialBackoffTests` | Unit | Theory ×6 |
+| SD-013 | Jitter spreads retries | `ExponentialBackoffTests` | Unit | Fact |
+| PS-070 | Envelope round trips with typed payload | `ProcessorEventSerializerTests` | Unit | Fact |
+| PS-071 | Uses camel case and string enums on the wire | `ProcessorEventSerializerTests` | Unit | Fact |
+| PS-072 | Ack round trips | `ProcessorEventSerializerTests` | Unit | Fact |
+| PS-073 | Non ack messages are ignored | `ProcessorEventSerializerTests` | Unit | Theory ×3 |
+| PS-074 | Lifecycle events are queued with job metadata | `WebSocketJobEventPublisherTests` | Unit | Fact |
+| PS-075 | Completed event carries summary and results | `WebSocketJobEventPublisherTests` | Unit | Fact |
+| PS-076 | Progress is dropped while disconnected | `WebSocketJobEventPublisherTests` | Unit | Fact |
+| PS-077 | Full outbox does not throw | `WebSocketJobEventPublisherTests` | Unit | Fact |
+| JS-137 | Handled events are acknowledged and applied | `ProcessorEventsEndpointTests` | Component | Fact |
+| JS-138 | Duplicates and unknown jobs are acknowledged too | `ProcessorEventsEndpointTests` | Component | Fact |
+| JS-139 | Unreadable message is skipped and the connection keeps working | `ProcessorEventsEndpointTests` | Component | Fact |
+| JS-140 | Events are processed in order per connection | `ProcessorEventsEndpointTests` | Component | Fact |
+| JS-141 | Plain http request is rejected | `ProcessorEventsEndpointTests` | Component | Fact |
+| JS-142 | Event that cannot be stored is not acknowledged | `ProcessorEventsEndpointTests` | Component | Fact |
+| JS-095 | Started moves a queued job to processing | `ProcessorEventHandlerTests` | Unit | Fact |
+| JS-096 | Events arriving before the dispatcher recorded the 202 still apply | `ProcessorEventHandlerTests` | Unit | Fact |
+| JS-097 | Progress is recorded and never goes backwards | `ProcessorEventHandlerTests` | Unit | Fact |
+| JS-098 | Completed stores results then completes the job | `ProcessorEventHandlerTests` | Unit | Fact |
+| JS-099 | Replayed completion is ignored | `ProcessorEventHandlerTests` | Unit | Fact |
+| JS-100 | Late completion of a cancelled job is ignored and stores no results | `ProcessorEventHandlerTests` | Unit | Fact |
+| JS-101 | Out of order started after completed is ignored | `ProcessorEventHandlerTests` | Unit | Fact |
+| JS-102 | Failed records code and reason | `ProcessorEventHandlerTests` | Unit | Fact |
+| JS-103 | Unknown job is ignored | `ProcessorEventHandlerTests` | Unit | Fact |
+| JS-104 | Unknown event type is ignored | `ProcessorEventHandlerTests` | Unit | Fact |
+| JS-105 | Newer schema version is ignored | `ProcessorEventHandlerTests` | Unit | Fact |
+| JS-106 | Malformed payload is ignored not retried | `ProcessorEventHandlerTests` | Unit | Fact |
+| JS-107 | Storage failure propagates so the event is not acknowledged | `ProcessorEventHandlerTests` | Unit | Fact |
+| JS-074 | Lost completion event is recovered with results | `JobReconcilerTests` | Unit | Fact |
+| JS-075 | Lost failure event is recovered | `JobReconcilerTests` | Unit | Fact |
+| JS-076 | Job lost by a restarted processor is redispatched | `JobReconcilerTests` | Unit | Fact |
+| JS-077 | Job lost too many times fails | `JobReconcilerTests` | Unit | Fact |
+| JS-079 | Event arriving during reconciliation wins over redispatch | `JobReconcilerTests` | Unit | Fact |
+| E2E-001 | Job flows through processor websocket and audit | `EndToEndTests` | Integration (E2E) | Fact |
+| E2E-004 | Job lost by a processor restart is redispatched and completes | `EndToEndTests` | Integration (E2E) | Fact |
+
+All automated tests listed here passed in the latest full run (404 / 404).
+
+### 5.3 Manual test (Docker Desktop) — STD MT-07
 
 | Step | Command | Expected |
 |---|---|---|
 | 1 | Start the stack: `docker compose up -d` (or `scripts/docker-up-prebuilt.ps1`) | All containers healthy |
-| 2 | Start a long job: `powershell -ExecutionPolicy Bypass -File .\scripts\smoke-test.ps1 -Jobs 10 -Documents 1000` | Jobs start processing |
+| 2 | Start a long run: `powershell -ExecutionPolicy Bypass -File .\scripts\smoke-test.ps1 -Jobs 10 -Documents 1000` | Jobs start processing |
 | 3 | `docker compose restart job-service` while jobs run | — |
 | 4 | `docker compose logs -f processor-service` | `Job Service events connection failed (attempt N)` with growing delays, then `Connected to Job Service events endpoint … N events pending` |
 | 5 | `GET /api/jobs?status=Completed` | Every job Completed; nothing lost |
 | 6 | `curl.exe http://localhost:5002/health/ready` during step 3 | `Degraded` while disconnected, `Healthy` after reconnect |
 
-This is procedure **MT-07** in the STD.
+Status in the STD: *Not yet executed*.
 
 ## 6. Configuration
 

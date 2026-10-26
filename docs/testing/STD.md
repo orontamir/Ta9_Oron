@@ -122,6 +122,8 @@ Requirements are taken from the home assignment (§3–§7 and the bonus §12).
 | R18 | Bonus: Audit Service `POST /api/audit`, `GET /api/audit/{jobId}` | `AuditApiTests`, `AuditRepositoryContract`, `AuditPublisherTests`, `HttpAuditClientTests`, `EndToEndTests` | MT-02 |
 
 ## 7. Automated test case catalog
+Section-specific subsets of this catalog, with the same IDs, appear in the topic documents: `docs/concurrency/TA9-Concurrency-Performance.docx` (§4 Concurrency & Performance, chapter 7) and `docs/websocket/TA9-WebSocket-Behavior.docx` (WebSocket disconnect/reconnect, chapter 5).
+
 Each test case title is the test method name. ID prefixes: **SD** shared infrastructure, **PS** Processor Service, **JS** Job Service, **AS** Audit Service, **E2E** cross-service. *Theory ×N* runs N data rows; *×2 stores* runs once against InMemory and once against MongoDB.
 
 ### 7.1 Shared infrastructure (Ta9.ServiceDefaults.Tests)
