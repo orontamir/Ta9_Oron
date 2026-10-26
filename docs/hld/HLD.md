@@ -1,0 +1,523 @@
+# High-Level Design — TA9 Real-Time Document Processing System
+
+| | |
+|---|---|
+| **Document** | High-Level Design (HLD) |
+| **System** | TA9 Document Processing (Job Service · Processor Service · Audit Service) |
+| **Stack** | C# / .NET 8 · ASP.NET Core · MongoDB 7 · Docker Compose |
+| **Diagrams** | Editable source: [`diagrams/ta9-hld.drawio`](diagrams/ta9-hld.drawio). Open with [app.diagrams.net](https://app.diagrams.net) or the VS Code *Draw.io Integration* extension. The Mermaid versions below render directly on GitHub |
+| **Detailed design** | [`../design`](../design) — architecture, API contracts, reliability, decision log (D1–D24) |
+
+| draw.io page | Section |
+|---|---|
+| 1. Architecture | [§3 Architecture diagram](#3-architecture-diagram) |
+| 2a / 2b. Class Diagram | [§5 Class diagrams](#5-class-diagrams) |
+| 3. Flow Diagram | [§6 Flow diagram](#6-flow-diagram) |
+| 4. Job State Machine | [§7 Job lifecycle](#7-job-lifecycle-state-machine) |
+| 5a / 5b / 5c. Sequence | [§8 Sequence diagrams](#8-sequence-diagrams) |
+
+---
+
+## 1. Purpose and scope
+
+The system accepts batches of text documents, analyzes them asynchronously and exposes progress and results in real time. For each document it computes:
+- word count
+- unique word count
+- top-5 words
+- SHA-256
+- character count, line count, average word length and longest word
+
+**In scope:** three services communicating over REST, WebSocket and SSE; bounded concurrent processing; failure handling (invalid input, unreachable services, restarts, lost or duplicate events); persistent storage; observability; automated tests; containerized deployment.
+
+**Out of scope (by assignment):** authentication/authorization, UI, Kubernetes, message brokers, Redis, CI/CD.
+
+## 2. Requirements and quality goals
+
+| Category | Requirement | How the design meets it |
+|---|---|---|
+| Functional | CRUD-style job API, a simple lifecycle, per-document statistics | `/api/jobs`, state machine `Pending → Queued → Processing → Completed \| Failed` plus `Cancelled` |
+| Integration | Job Service ↔ Processor over REST **and** WebSocket/SSE | REST dispatch; processor events over WS with acks; SSE to clients |
+| Performance | ≥ 10 concurrent jobs × up to 1,000 documents; no unbounded parallelism; no blocked threads | Bounded channel (100) + 10 workers × 2 documents in parallel; async I/O; verified by an integration test |
+| Reliability | Invalid input, processor unreachable, WS disconnects, duplicates | Validation (400), persisted retries with backoff, outbox + ack + reconnect, idempotent handlers, reconciler |
+| Storage | Replaceable persistence | Repository interfaces; MongoDB and InMemory implementations selected by configuration |
+| Observability | — | Structured logs (Serilog), end-to-end correlation id, liveness and readiness health checks |
+
+## 3. Architecture diagram
+
+*draw.io page **1. Architecture***
+
+```mermaid
+flowchart LR
+    client([Client<br/>browser · Postman · curl])
+
+    subgraph JS["Job Service :5001 — public API, source of truth"]
+        ctrl[JobsController<br/>REST /api/jobs]
+        sse[JobEventStream<br/>SSE]
+        wse[ProcessorEventsEndpoint<br/>WS /ws/processor-events]
+        mgr[JobManager]
+        hnd[ProcessorEventHandler]
+        dsp[[JobDispatcher BG]]
+        rec[[JobReconciler BG]]
+        apub[[AuditPublisher BG]]
+        repo[(BroadcastingJobRepository<br/>Mongo or InMemory)]
+        bc[JobUpdateBroadcaster]
+    end
+
+    subgraph PS["Processor Service :5002 — stateless worker"]
+        pctrl[ProcessController<br/>REST /api/process]
+        q[ChannelJobQueue<br/>bounded 100]
+        wk[[JobWorkerService<br/>10 workers]]
+        run[JobRunner<br/>DOP 2 per job]
+        an[DocumentAnalyzer]
+        ob[EventOutbox]
+        wsc[[JobServiceEventsClient<br/>WS client]]
+    end
+
+    subgraph AS["Audit Service :5003"]
+        actrl[AuditController<br/>REST /api/audit]
+    end
+
+    mongo[(MongoDB<br/>ta9_jobs · ta9_audit)]
+
+    client -- REST --> ctrl
+    sse -- SSE --> client
+    ctrl --> mgr --> repo
+    dsp -- "REST POST/GET/DELETE /api/process" --> pctrl
+    rec -- "GET /api/process/id" --> pctrl
+    pctrl --> q --> wk --> run --> an
+    run --> ob --> wsc
+    wsc <-- "WebSocket events / acks" --> wse
+    wse --> hnd --> repo
+    dsp --> repo
+    rec --> hnd
+    repo --> bc --> sse
+    apub -- "REST POST /api/audit" --> actrl
+    repo -.-> mongo
+    actrl -.-> mongo
+```
+
+### 3.1 Services and responsibilities
+
+| Service | Responsibility | State | Talks to |
+|---|---|---|---|
+| **Job Service** | Public API. **Owns the job lifecycle** (single source of truth). Dispatches work, applies processor events, streams status (SSE), publishes audit summaries | MongoDB `ta9_jobs` (`jobs`, `job_documents`) | Processor (REST out, WS in), Audit (REST out), clients (REST, SSE) |
+| **Processor Service** | Stateless worker: accepts work, analyzes documents with bounded concurrency, reports the lifecycle | In memory (finished results kept 1 h for reconciliation) | Job Service (WS client) |
+| **Audit Service** | Stores immutable summaries of finished jobs | MongoDB `ta9_audit` (`audit_entries`) | — |
+| **Ta9.Contracts** (library) | Shared REST DTOs, WS event envelope and serializer, input limits | — | — |
+| **Ta9.ServiceDefaults** (library) | Serilog, correlation id, ProblemDetails, health endpoints, exponential backoff | — | — |
+
+### 3.2 Communication
+
+| From → To | Protocol | Purpose | Delivery semantics |
+|---|---|---|---|
+| Client → Job Service | REST | Create, list, get, results, cancel, delete | Synchronous; job processing is asynchronous |
+| Job Service → Client | **SSE** | Live status and progress per job | Snapshot + every change; stream ends at a terminal state |
+| Job Service → Processor | REST | Dispatch (POST, idempotent by `jobId`), status (GET), cancel (DELETE) | Retries with persisted exponential backoff |
+| Processor → Job Service | **WebSocket** | `JobStarted`, `JobProgress`, `JobCompleted`, `JobFailed`, `JobCancelled` + acks back | Lifecycle: **at-least-once** (outbox + ack). Progress: best effort |
+| Job Service → Audit | REST | Terminal job summaries | At-least-once (outbox flag); idempotent receiver |
+
+## 4. Component design
+
+### 4.1 Job Service (layers: Api → Application → Domain ← Infrastructure)
+
+| Component | Role |
+|---|---|
+| `JobsController`, `JobEventStream`, `ProcessorEventsEndpoint` | HTTP / SSE / WebSocket adapters |
+| `JobManager` | Use cases: create (documents, then job: commit marker), results, cancel (propagated to the processor), delete (finished jobs only) |
+| `JobDispatcher` (background) | Atomically claims due `Pending` jobs with a **lease**, sends them in bounded parallel batches, applies the outcome (Queued / retry after hint / backoff → Failed / Failed) |
+| `ProcessorEventHandler` | Applies events and status snapshots through the state machine; results are stored before the status changes |
+| `JobReconciler` (background) | Safety net for lost events and processor restarts |
+| `AuditPublisher` (background) | Delivers terminal summaries; the `auditPublished` flag is the outbox |
+| `Job`, `JobStateMachine` | Aggregate with `Try*` transitions; one transition table for the whole system |
+| `IJobRepository` + `BroadcastingJobRepository` | Persistence with **optimistic concurrency** (`Version`). A decorator publishes every successful write to SSE subscribers |
+
+### 4.2 Processor Service
+
+| Component | Role |
+|---|---|
+| `ProcessController` / `ProcessingService` | Validate; idempotent submit (known `jobId` → 200); bounded enqueue (full → **503 + Retry-After**); cancel |
+| `ChannelJobQueue` | Bounded `Channel<T>`, the backpressure point |
+| `JobWorkerService` (background) | 10 long-lived worker loops awaiting the channel (no blocked threads) |
+| `JobRunner` | `Parallel.ForEachAsync` with DOP 2 per job; per-document failure isolation; throttled progress; cooperative cancellation |
+| `DocumentAnalyzer` + `Tokenizer` | Pure, deterministic analysis (Unicode, NFC, case-insensitive; ties broken alphabetically) |
+| `EventOutbox` + `JobServiceEventsClient` | Lifecycle events kept until acked and replayed after reconnect or ack timeout; reconnect with backoff and jitter |
+
+## 5. Class diagrams
+
+*draw.io pages **2a. Class Diagram — Job Service** and **2b. Class Diagram — Processor Service** (full members). Condensed version:*
+
+```mermaid
+classDiagram
+    direction LR
+    class Job {
+        +Guid Id
+        +JobStatus Status
+        +int TotalDocuments
+        +int ProcessedDocuments
+        +int DispatchAttempts
+        +int RedispatchCount
+        +DateTimeOffset? NextDispatchAt
+        +DateTimeOffset? LeaseUntil
+        +bool AuditPublished
+        +long Version
+        +TryMarkQueued(now) bool
+        +TryStart(now) bool
+        +RecordProgress(n, now) bool
+        +TryComplete(summary, now) bool
+        +TryFail(reason, now) bool
+        +TryCancel(now) bool
+        +TryReturnToPending(now) bool
+    }
+    class JobStatus {
+        <<enumeration>>
+        Pending
+        Queued
+        Processing
+        Completed
+        Failed
+        Cancelled
+    }
+    class JobStateMachine {
+        <<static>>
+        +CanTransition(from, to) bool
+        +IsTerminal(status) bool
+    }
+    class JobDocument {
+        +string Id
+        +Guid JobId
+        +int Index
+        +string Content
+        +DocumentResultDto? Result
+    }
+    class IJobRepository {
+        <<interface>>
+        +TryUpdateAsync(job) bool
+        +TryClaimNextForDispatchAsync(now, lease) Job
+        +FindStaleActiveAsync(before, limit)
+        +FindUnpublishedTerminalAsync(limit)
+    }
+    class MongoJobRepository
+    class InMemoryJobRepository
+    class BroadcastingJobRepository {
+        <<decorator>>
+    }
+    class JobManager
+    class JobDispatcher {
+        <<BackgroundService>>
+    }
+    class JobReconciler {
+        <<BackgroundService>>
+    }
+    class ProcessorEventHandler
+    class IProcessorClient {
+        <<interface>>
+        +SubmitAsync(jobId, docs) DispatchResult
+        +GetAsync(jobId) ProcessorLookup
+        +CancelAsync(jobId) bool
+    }
+
+    Job --> JobStatus
+    Job ..> JobStateMachine
+    Job "1" *-- "1..1000" JobDocument
+    MongoJobRepository ..|> IJobRepository
+    InMemoryJobRepository ..|> IJobRepository
+    BroadcastingJobRepository ..|> IJobRepository
+    JobManager ..> IJobRepository
+    JobDispatcher ..> IJobRepository
+    JobDispatcher ..> IProcessorClient
+    JobReconciler ..> IProcessorClient
+    JobReconciler ..> ProcessorEventHandler
+    ProcessorEventHandler ..> IJobRepository
+```
+
+```mermaid
+classDiagram
+    direction LR
+    class ProcessingService {
+        +Submit(request) SubmitResult
+        +Cancel(jobId) CancelOutcome
+    }
+    class ProcessingJob {
+        +Guid JobId
+        +ProcessingStatus Status
+        +TryStart(now) bool
+        +TryComplete(results, summary, now) bool
+        +TryCancel(now) bool
+    }
+    class IJobQueue {
+        <<interface>>
+        +TryEnqueue(job) bool
+        +ReadAllAsync(ct)
+    }
+    class ChannelJobQueue
+    class JobWorkerService {
+        <<BackgroundService>>
+    }
+    class JobRunner {
+        +RunAsync(job, ct)
+    }
+    class IDocumentAnalyzer {
+        <<interface>>
+        +Analyze(content) DocumentAnalysis
+    }
+    class DocumentAnalyzer
+    class IJobEventPublisher {
+        <<interface>>
+    }
+    class WebSocketJobEventPublisher
+    class EventOutbox {
+        +TryAddLifecycle(envelope) bool
+        +OfferProgress(envelope)
+        +TakeDue(ackTimeout)
+        +Acknowledge(eventId) bool
+    }
+    class JobServiceEventsClient {
+        <<BackgroundService>>
+    }
+
+    ProcessingService ..> IJobQueue
+    ProcessingService ..> ProcessingJob
+    ChannelJobQueue ..|> IJobQueue
+    JobWorkerService ..> IJobQueue
+    JobWorkerService ..> JobRunner
+    JobRunner ..> IDocumentAnalyzer
+    JobRunner ..> IJobEventPublisher
+    DocumentAnalyzer ..|> IDocumentAnalyzer
+    WebSocketJobEventPublisher ..|> IJobEventPublisher
+    WebSocketJobEventPublisher ..> EventOutbox
+    JobServiceEventsClient ..> EventOutbox
+```
+
+### 5.1 Data model (MongoDB)
+
+| Collection | Key | Main fields | Indexes |
+|---|---|---|---|
+| `jobs` | `_id` = job id (string GUID) | status, counters, summary, timestamps, dispatch bookkeeping (`dispatchAttempts`, `nextDispatchAt`, `leaseUntil`, `redispatchCount`), `auditPublished`, `version` | `{status, nextDispatchAt}` (dispatcher) · `{status, updatedAt}` (reconciler) · `{auditPublished, status}` (audit) · `{createdAt: -1}` (listing) |
+| `job_documents` | `_id` = `"{jobId}-{index}"` | jobId, index, name, content, result | `{jobId, index}` unique |
+| `audit_entries` | `_id` = job id | status, counts, total words, failure reason, timestamps, `recordedAt` | — |
+
+Documents live in a separate collection so that a 1,000-document job never approaches the 16 MB BSON limit and status reads stay small. There are no multi-document transactions. Instead, documents are written before the job (the job is the commit marker) and deleted after it.
+
+## 6. Flow diagram
+
+*draw.io page **3. Flow Diagram** (swim lanes per service)*
+
+```mermaid
+flowchart TD
+    A([Client: POST /api/jobs]) --> B{Valid?}
+    B -- No --> B1([400 ValidationProblem])
+    B -- Yes --> C[Store documents, then job = Pending<br/>201 Created · signal dispatcher]
+    C --> D[Dispatcher: atomic claim with lease]
+    D --> E[POST /api/process]
+    E --> F{Processor queue full?}
+    F -- Yes --> G{{503 + Retry-After}}
+    F -- No --> H[Enqueue · 202 Accepted]
+    G --> I[Retry after hint<br/>attempt not counted] --> D
+    E -. unreachable / 5xx .-> J{Attempts ≥ 5?}
+    J -- No --> K[Backoff 2 s→60 s + jitter] --> D
+    J -- Yes --> X([Job = Failed])
+    E -. 4xx .-> X
+    H --> L[Job = Queued]
+    H --> M[Worker: JobStarted]
+    M --> N[Analyze documents<br/>DOP 2 · per-document try/catch]
+    N --> O{All documents failed?}
+    O -- Yes --> P[JobFailed]
+    O -- No --> Q[JobCompleted: summary + results]
+    P --> R[Outbox → WebSocket<br/>resend until ack]
+    Q --> R
+    R --> S{Legal transition?}
+    S -- No --> S1[Ignore, still ack]
+    S -- Yes --> T[Save results, then status · ack]
+    T --> U[Broadcast to SSE subscribers]
+    U --> V[AuditPublisher → POST /api/audit]
+    V --> W([Job finished])
+```
+
+**Safety net (reconciler, every 30 s):** for `Queued`/`Processing` jobs silent for more than 60 s it calls `GET /api/process/{id}`. Running → refresh progress. Finished → apply the result. **404** (processor restarted) → back to `Pending` and redispatch (max 3, then `Failed`). Processor unreachable → leave the job alone.
+
+## 7. Job lifecycle (state machine)
+
+*draw.io page **4. Job State Machine***
+
+```mermaid
+stateDiagram-v2
+    [*] --> Pending : POST /api/jobs
+    Pending --> Queued : processor accepted (202) / first event
+    Pending --> Failed : retries exhausted / 4xx
+    Queued --> Processing : JobStarted / JobProgress
+    Queued --> Completed : JobCompleted (Started lost)
+    Processing --> Completed : JobCompleted
+    Queued --> Failed : JobFailed
+    Processing --> Failed : JobFailed
+    Queued --> Pending : processor lost job (404)
+    Processing --> Pending : processor lost job (404)
+    Pending --> Cancelled : cancel
+    Queued --> Cancelled : cancel
+    Processing --> Cancelled : cancel
+    Completed --> [*]
+    Failed --> [*]
+    Cancelled --> [*]
+```
+
+Terminal states accept nothing, so duplicates, replays and late events are no-ops. Every write goes through optimistic concurrency (load → mutate → replace if `version` is unchanged → retry), so the WS handler, dispatcher, reconciler and cancel requests never overwrite each other.
+
+## 8. Sequence diagrams
+
+### 8.1 Happy path
+*draw.io page **5a. Sequence — Happy Path** (30 numbered messages, including SSE and audit)*
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor C as Client
+    participant API as Job API
+    participant DB as MongoDB
+    participant D as JobDispatcher
+    participant P as Processor
+    participant W as Worker
+    participant WS as WS endpoint + handler
+    participant A as Audit Service
+
+    C->>API: POST /api/jobs
+    API->>DB: insert documents, then job (Pending)
+    API-->>C: 201 Created {id}
+    API->>D: signal
+    D->>DB: claim (findOneAndUpdate + lease)
+    D->>P: POST /api/process {jobId, documents}
+    P->>W: enqueue (bounded channel)
+    P-->>D: 202 Accepted
+    D->>DB: Pending → Queued
+    W->>WS: JobStarted (WebSocket)
+    WS->>DB: Queued → Processing
+    WS-->>W: ack
+    W->>W: analyze documents (DOP 2)
+    W->>WS: JobProgress (throttled)
+    W->>WS: JobCompleted {summary, results}
+    WS->>DB: save results, then Completed
+    WS-->>W: ack
+    Note over C,API: SSE pushed every change: Pending → Processing → Completed
+    API->>A: POST /api/audit (AuditPublisher)
+    A-->>API: 201 Created
+    C->>API: GET /api/jobs/{id}/results
+    API-->>C: 200 results
+```
+
+### 8.2 Processor restart mid-job
+*draw.io page **5b. Sequence — Processor Restart***
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Old as Processor (old)
+    participant New as Processor (new)
+    participant R as JobReconciler
+    participant DB as MongoDB
+    participant D as JobDispatcher
+    participant WS as WS endpoint
+
+    Note over Old: crashes while Processing (memory lost)
+    R->>DB: find Queued/Processing silent > 60 s
+    R->>New: GET /api/process/{id}
+    New-->>R: 404 Not Found
+    R->>DB: if still stale → Pending, redispatchCount++
+    R->>D: signal
+    D->>New: POST /api/process
+    New-->>D: 202 Accepted
+    New->>WS: JobStarted … JobCompleted
+    WS->>DB: Completed
+```
+
+### 8.3 WebSocket disconnect, reconnect and replay
+*draw.io page **5c. Sequence — WebSocket Reconnect***
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant R as JobRunner
+    participant O as EventOutbox
+    participant C as WS client
+    participant E as WS endpoint
+    participant H as Handler + MongoDB
+
+    R->>O: TryAddLifecycle(JobCompleted E1)
+    O->>C: TakeDue → [E1]
+    C->>E: JobCompleted (E1)
+    Note over C,E: connection drops before the ack
+    C->>O: MarkDisconnected (E1 kept, progress dropped)
+    C->>C: reconnect, backoff 1 s → 30 s ± 20%
+    C->>E: connect
+    C->>O: MarkConnected → unacked due again
+    C->>E: replay JobCompleted (E1)
+    E->>H: HandleAsync(E1) → Applied, or Ignored if already applied
+    E-->>C: ack(E1)
+    C->>O: Acknowledge(E1) → removed
+```
+
+## 9. Non-functional design
+
+### 9.1 Concurrency and performance
+- **Two explicit bounds:** at most 10 concurrent jobs × 2 documents = **20 CPU work items**, and at most 100 jobs queued. Above that, 503 + `Retry-After` backpressure flows back to the dispatcher.
+- **No blocked threads:** workers `await` the channel and all I/O is async. Only the CPU-bound analysis runs on pool threads.
+- **Fairness:** each job gets its own small parallelism slice, so large jobs never starve small ones.
+- **Verified:** the integration test runs 10 × 1,000 documents end to end and asserts every document is analyzed exactly once with at most 20 concurrent analyses.
+
+### 9.2 Reliability
+| Failure | Handling |
+|---|---|
+| Invalid input | 400 ProblemDetails with field errors; nothing persisted |
+| Processor unreachable / overloaded | Persisted exponential backoff (5 attempts → Failed); 503 is not counted |
+| WS disconnect | Outbox + ack + reconnect with jitter; readiness Degraded |
+| Duplicate / out-of-order events | State machine, monotonic progress, idempotent result writes |
+| Processor restart | Reconciler redispatch (max 3) |
+| Job Service restart | All state in MongoDB; leases expire; outboxes replay |
+| MongoDB down | 503 (5 s fail-fast); events not acked and therefore resent |
+| Audit down | Jobs unaffected; outbox flag; backoff |
+
+### 9.3 Scalability (current limits → next step)
+- The Processor scales horizontally behind a load balancer. The dispatcher only needs one URL, and `POST` is idempotent.
+- The Job Service's dispatch is multi-instance safe (atomic leases). **SSE fan-out and WS fan-in are per instance**: the next step is Redis pub/sub or a broker.
+- At larger scale, a durable broker (RabbitMQ or Kafka) would replace REST dispatch, WS events and the reconciler.
+
+### 9.4 Observability
+- **Logging:** Serilog JSON logs enriched with `Service`, `CorrelationId` and `JobId`.
+- **Correlation id:** propagated over HTTP headers and inside WS envelopes.
+- **Health:** `/health/live` and `/health/ready`, used by the compose health checks.
+- **Next step:** OpenTelemetry traces and metrics (queue depth, dispatch latency, outbox size).
+
+### 9.5 Security (POC scope)
+- No authentication, by assignment. Production would add JWT on the public API and mTLS or a shared secret between services.
+- Input limits protect the services: 1,000 docs, 100 KB per document, 10 MB per body, 16 MB per WS message.
+- Correlation ids are sanitized to prevent log injection.
+
+## 10. Deployment
+
+```mermaid
+flowchart LR
+    subgraph compose["docker compose (network: ta9_default)"]
+        mongo[(mongo:7.0<br/>:27017 · volume mongo-data)]
+        job[job-service<br/>:5001 → 8080]
+        proc[processor-service<br/>:5002 → 8080]
+        audit[audit-service<br/>:5003 → 8080]
+    end
+    job -- depends_on healthy --> mongo
+    audit -- depends_on healthy --> mongo
+    proc -- depends_on healthy --> job
+    proc -- "ws://job-service:8080/ws/processor-events" --> job
+    job -- "http://processor-service:8080" --> proc
+    job -- "http://audit-service:8080" --> audit
+```
+
+- **Images:** one multi-stage `Dockerfile` (`PROJECT` build arg) with a cached restore layer, the `aspnet:8.0` runtime and a non-root user. `Dockerfile.prebuilt` serves networks with TLS inspection.
+- **Health checks:** `curl /health/ready` per service. Startup order: Mongo → Job + Audit → Processor.
+- **Configuration:** environment variables override `appsettings.json` (e.g. `Processing__MaxConcurrentJobs`, `Storage__Provider`).
+
+## 11. Risks, limitations and future work
+
+| Risk / limitation | Mitigation today | Future work |
+|---|---|---|
+| Processor state in memory | Reconciler redispatch (≤ ~60 s latency) | Durable broker |
+| Per-instance SSE/WS fan-out | Single Job Service instance | Redis pub/sub |
+| Large `JobCompleted` messages | 16 MB cap; ~0.5 MB for 1,000 docs | Pull results via REST, or chunk them |
+| No auth / rate limiting | Out of scope | JWT, mTLS, rate limiter |
+| A job deleted before its audit summary is published | Delete is allowed only for finished jobs | Publish before delete |
+| Long processor outage | Jobs left untouched and rechecked | Maximum age before failing |
