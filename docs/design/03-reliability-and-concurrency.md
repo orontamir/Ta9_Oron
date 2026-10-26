@@ -31,7 +31,7 @@ POST /api/process ──TryWrite──► Channel<ProcessingJob>(capacity: Queue
 
 | Mechanism | Protects against |
 |---|---|
-| State machine and conditional Mongo update (`status ∈ allowedFrom`) | Duplicate or out-of-order events, races between the WS handler, reconciler and cancel |
+| State machine in `Job` + optimistic concurrency (`Version`, retry on conflict) | Duplicate or out-of-order events, races between the WS handler, reconciler, dispatcher and cancel |
 | `processedDocuments = max(...)` | Out-of-order progress |
 | Results upsert keyed by `(jobId, index)` | Replayed `JobCompleted` |
 | `POST /api/process` idempotent by `jobId` | Dispatcher retry after a timeout when the processor did accept the job |

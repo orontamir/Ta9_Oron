@@ -9,6 +9,8 @@ public class Program
     {
         var builder = WebApplication.CreateBuilder(args);
         builder.AddServiceDefaults("job-service");
+        builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddJobStorage(builder.Configuration);
 
         builder.Services
             .AddControllers()

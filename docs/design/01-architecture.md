@@ -75,7 +75,7 @@ The core path is the one from the assignment, `Pending → Processing → Comple
 - **Queued**: the processor has accepted the job but not started it yet. Without it, "dispatched but waiting in the processor queue" cannot be told apart from "not dispatched yet", and that distinction is exactly what the dispatcher and the reconciler need.
 - **Cancelled**: the user cancelled. This is a different outcome from Failed, which means the system failed.
 
-All transitions live in **one** place (`JobStateMachine`). Persistence enforces them with a **conditional update** (`filter: {_id, status ∈ allowedFrom}`), so concurrent writers (the WS handler, the reconciler, a cancel request) can never move a job backwards.
+All transitions live in **one** place (`JobStateMachine`, used by the `Job` aggregate's `Try*` methods). Writes use **optimistic concurrency**: every job carries a `Version`, and an update succeeds only if the stored version is unchanged (otherwise reload, re-apply, retry). Concurrent writers (the WS handler, the reconciler, a cancel request) therefore can never overwrite each other or move a job backwards.
 
 ## 4. Main flows
 
