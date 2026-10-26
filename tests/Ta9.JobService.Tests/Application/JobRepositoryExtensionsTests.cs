@@ -22,6 +22,8 @@ public class JobRepositoryExtensionsTests
             inner.TryClaimNextForDispatchAsync(now, leaseUntil, ct);
         public Task<IReadOnlyList<Job>> FindStaleActiveAsync(DateTimeOffset updatedBefore, int limit, CancellationToken ct) =>
             inner.FindStaleActiveAsync(updatedBefore, limit, ct);
+        public Task<IReadOnlyList<Job>> FindUnpublishedTerminalAsync(int limit, CancellationToken ct) =>
+            inner.FindUnpublishedTerminalAsync(limit, ct);
 
         public Task<bool> TryUpdateAsync(Job job, CancellationToken ct) =>
             Interlocked.Decrement(ref _remainingConflicts) >= 0 ? Task.FromResult(false) : inner.TryUpdateAsync(job, ct);

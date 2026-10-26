@@ -143,6 +143,19 @@ public class JobTests
     }
 
     [Fact]
+    public void Audit_flag_is_set_once_and_only_for_finished_jobs()
+    {
+        var active = TestJobs.InStatus(JobStatus.Processing);
+        active.TryMarkAuditPublished().Should().BeFalse();
+
+        var finished = TestJobs.InStatus(JobStatus.Failed);
+        var updatedAt = finished.UpdatedAt;
+        finished.TryMarkAuditPublished().Should().BeTrue();
+        finished.TryMarkAuditPublished().Should().BeFalse();
+        finished.UpdatedAt.Should().Be(updatedAt, "bookkeeping must not look like job activity");
+    }
+
+    [Fact]
     public void Clone_is_independent()
     {
         var job = TestJobs.New();

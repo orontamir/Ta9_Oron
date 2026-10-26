@@ -9,9 +9,11 @@ public class Program
     {
         var builder = WebApplication.CreateBuilder(args);
         builder.AddServiceDefaults("audit-service");
+        builder.Services.AddAudit(builder.Configuration);
 
         builder.Services
-            .AddControllers()
+            // The validator owns every input rule; don't let MVC add an implicit [Required].
+            .AddControllers(o => o.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true)
             .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen();

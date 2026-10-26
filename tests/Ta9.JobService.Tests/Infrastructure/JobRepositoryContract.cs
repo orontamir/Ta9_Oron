@@ -190,6 +190,24 @@ public abstract class JobRepositoryContract
     }
 
     [Fact]
+    public async Task Unpublished_query_returns_finished_jobs_not_yet_audited()
+    {
+        var completed = TestJobs.InStatus(JobStatus.Completed, TestJobs.T0);
+        var failed = TestJobs.InStatus(JobStatus.Failed, TestJobs.T0.AddSeconds(-10));
+        var published = TestJobs.InStatus(JobStatus.Cancelled, TestJobs.T0);
+        published.TryMarkAuditPublished();
+        var active = TestJobs.InStatus(JobStatus.Processing, TestJobs.T0);
+        foreach (var job in new[] { completed, failed, published, active })
+        {
+            await Jobs.InsertAsync(job, None);
+        }
+
+        var pending = await Jobs.FindUnpublishedTerminalAsync(limit: 10, None);
+
+        pending.Select(j => j.Id).Should().Equal(failed.Id, completed.Id);
+    }
+
+    [Fact]
     public async Task Delete_removes_the_job_once()
     {
         var job = TestJobs.New();

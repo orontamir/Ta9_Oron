@@ -125,4 +125,7 @@ public sealed class BroadcastingJobRepository(IJobRepository inner, IJobUpdateBr
 
     public Task<IReadOnlyList<Job>> FindStaleActiveAsync(DateTimeOffset updatedBefore, int limit, CancellationToken cancellationToken) =>
         inner.FindStaleActiveAsync(updatedBefore, limit, cancellationToken);
+
+    public Task<IReadOnlyList<Job>> FindUnpublishedTerminalAsync(int limit, CancellationToken cancellationToken) =>
+        inner.FindUnpublishedTerminalAsync(limit, cancellationToken);
 }

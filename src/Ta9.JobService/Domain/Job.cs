@@ -129,6 +129,18 @@ public sealed class Job
         LeaseUntil = null;
     });
 
+    /// <summary>The terminal summary reached the Audit Service (outbox flag). Bookkeeping only: UpdatedAt is unchanged.</summary>
+    public bool TryMarkAuditPublished()
+    {
+        if (!IsTerminal || AuditPublished)
+        {
+            return false;
+        }
+
+        AuditPublished = true;
+        return true;
+    }
+
     /// <summary>Records that the job is known to be alive (used by the reconciler) without changing its state.</summary>
     public bool Touch(DateTimeOffset now)
     {

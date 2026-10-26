@@ -33,6 +33,9 @@ public interface IJobRepository
 
     /// <summary>Queued/Processing jobs not updated since <paramref name="updatedBefore"/>, oldest first.</summary>
     Task<IReadOnlyList<Job>> FindStaleActiveAsync(DateTimeOffset updatedBefore, int limit, CancellationToken cancellationToken);
+
+    /// <summary>Terminal jobs whose summary has not been delivered to the Audit Service yet, oldest first.</summary>
+    Task<IReadOnlyList<Job>> FindUnpublishedTerminalAsync(int limit, CancellationToken cancellationToken);
 }
 
 public interface IJobDocumentRepository

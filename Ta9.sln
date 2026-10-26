@@ -23,6 +23,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ta9.Contracts", "src\Ta9.Co
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ta9.JobService.Tests", "tests\Ta9.JobService.Tests\Ta9.JobService.Tests.csproj", "{2C55730A-596D-4796-89E8-366AE4DBBC0B}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ta9.AuditService.Tests", "tests\Ta9.AuditService.Tests\Ta9.AuditService.Tests.csproj", "{80F91751-5988-419E-A4E2-E5F8281747EB}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -61,6 +63,10 @@ Global
 		{2C55730A-596D-4796-89E8-366AE4DBBC0B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2C55730A-596D-4796-89E8-366AE4DBBC0B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2C55730A-596D-4796-89E8-366AE4DBBC0B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{80F91751-5988-419E-A4E2-E5F8281747EB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{80F91751-5988-419E-A4E2-E5F8281747EB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{80F91751-5988-419E-A4E2-E5F8281747EB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{80F91751-5988-419E-A4E2-E5F8281747EB}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -74,5 +80,6 @@ Global
 		{2289F572-83E0-4049-8AC2-39900D352D12} = {F9B3442E-6243-4C08-A245-4F22D15E68EC}
 		{4365FF7A-8C9C-48AE-96EF-3D82397965F3} = {A5297894-614E-4B36-AC70-DA6A0A51DD18}
 		{2C55730A-596D-4796-89E8-366AE4DBBC0B} = {F9B3442E-6243-4C08-A245-4F22D15E68EC}
+		{80F91751-5988-419E-A4E2-E5F8281747EB} = {F9B3442E-6243-4C08-A245-4F22D15E68EC}
 	EndGlobalSection
 EndGlobal

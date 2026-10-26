@@ -142,11 +142,13 @@ The Job Service acks **after** it has handled the event, whether it persisted it
 
 | Method | Path | Description | Responses |
 |---|---|---|---|
-| POST | `/api/audit` | Store a terminal job summary. Idempotent upsert by `jobId` | 201 (new), 200 (existing), 400 |
+| POST | `/api/audit` | Store a terminal job summary. Idempotent: the **first write wins** (audit records are immutable), and a repeat returns the original entry | 201 (new), 200 (existing), 400 |
 | GET | `/api/audit/{jobId}` | Get the summary | 200, 404 |
 
 ```json
 { "jobId": "…", "name": "…", "status": "Completed", "totalDocuments": 1000,
-  "succeeded": 998, "failed": 2, "failureReason": null,
+  "succeededDocuments": 998, "failedDocuments": 2, "totalWords": 512345, "failureReason": null,
   "createdAt": "…", "completedAt": "…" }
 ```
+
+The response adds `recordedAt`. **Delivery:** the Job Service's `AuditPublisher` polls terminal jobs with `auditPublished = false` (the flag is the outbox), posts them, and sets the flag. When the Audit Service is unavailable it stops the batch and backs off exponentially (5s up to 60s). A 4xx response is logged and not retried. Job state is never affected.

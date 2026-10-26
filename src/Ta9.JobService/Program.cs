@@ -14,6 +14,7 @@ public class Program
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddJobStorage(builder.Configuration);
         builder.Services.AddProcessorIntegration(builder.Configuration);
+        builder.Services.AddAuditPublishing(builder.Configuration);
         builder.Services.AddSingleton<JobManager>();
         builder.Services.AddSingleton<ProcessorEventHandler>();
         builder.Services.AddSingleton<ProcessorEventsEndpoint>();

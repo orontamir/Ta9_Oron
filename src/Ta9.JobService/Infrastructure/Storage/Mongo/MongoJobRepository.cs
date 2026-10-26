@@ -86,6 +86,14 @@ public sealed class MongoJobRepository : IJobRepository
             .Limit(limit)
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<Job>> FindUnpublishedTerminalAsync(int limit, CancellationToken cancellationToken) =>
+        await _jobs.Find(Builders<Job>.Filter.And(
+                Builders<Job>.Filter.Eq(job => job.AuditPublished, false),
+                Builders<Job>.Filter.In(job => job.Status, new[] { JobStatus.Completed, JobStatus.Failed, JobStatus.Cancelled })))
+            .SortBy(job => job.UpdatedAt)
+            .Limit(limit)
+            .ToListAsync(cancellationToken);
+
     public Task EnsureIndexesAsync(CancellationToken cancellationToken) =>
         _jobs.Indexes.CreateManyAsync(
         [
@@ -93,6 +101,8 @@ public sealed class MongoJobRepository : IJobRepository
             new CreateIndexModel<Job>(Builders<Job>.IndexKeys.Ascending(job => job.Status).Ascending(job => job.NextDispatchAt)),
             // Reconciler: active jobs without recent updates.
             new CreateIndexModel<Job>(Builders<Job>.IndexKeys.Ascending(job => job.Status).Ascending(job => job.UpdatedAt)),
+            // Audit publisher: terminal jobs not yet published.
+            new CreateIndexModel<Job>(Builders<Job>.IndexKeys.Ascending(job => job.AuditPublished).Ascending(job => job.Status)),
             // Listing newest first.
             new CreateIndexModel<Job>(Builders<Job>.IndexKeys.Descending(job => job.CreatedAt))
         ],

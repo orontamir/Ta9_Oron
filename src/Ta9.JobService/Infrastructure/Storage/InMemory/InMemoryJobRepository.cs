@@ -68,6 +68,14 @@ public sealed class InMemoryJobRepository : IJobRepository
             .Select(job => job.Clone())
             .ToList());
 
+    public Task<IReadOnlyList<Job>> FindUnpublishedTerminalAsync(int limit, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<Job>>(_jobs.Values
+            .Where(job => job.IsTerminal && !job.AuditPublished)
+            .OrderBy(job => job.UpdatedAt)
+            .Take(limit)
+            .Select(job => job.Clone())
+            .ToList());
+
     public Task<Job?> TryClaimNextForDispatchAsync(DateTimeOffset now, DateTimeOffset leaseUntil, CancellationToken cancellationToken)
     {
         lock (_writeGate)

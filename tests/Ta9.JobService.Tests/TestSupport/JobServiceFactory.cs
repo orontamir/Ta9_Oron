@@ -8,7 +8,7 @@ using Ta9.JobService.Domain;
 namespace Ta9.JobService.Tests.TestSupport;
 
 /// <summary>
-/// Job Service host for API tests: in-memory storage, dispatcher and reconciler off, fake Processor client.
+/// Job Service host for API tests: in-memory storage, background services off, fake Processor client.
 /// No external dependencies and no background state changes racing the assertions.
 /// </summary>
 public sealed class JobServiceFactory : WebApplicationFactory<Program>
@@ -20,6 +20,7 @@ public sealed class JobServiceFactory : WebApplicationFactory<Program>
         builder.UseSetting("Storage:Provider", "InMemory");
         builder.UseSetting("Dispatch:Enabled", "false");
         builder.UseSetting("Reconcile:Enabled", "false");
+        builder.UseSetting("Audit:Enabled", "false");
         builder.ConfigureTestServices(services => services.AddSingleton<IProcessorClient>(Processor));
     }
 
