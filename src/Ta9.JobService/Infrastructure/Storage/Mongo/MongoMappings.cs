@@ -21,7 +21,9 @@ public static class MongoMappings
             return;
         }
 
-        TryRegisterSerializer(new GuidSerializer(GuidRepresentation.Standard));
+        // Guids as strings: immune to the driver 2.x legacy/standard binary GUID representation mismatch
+        // (which makes equality filters silently miss), and readable in the Mongo shell.
+        TryRegisterSerializer(new GuidSerializer(BsonType.String));
         TryRegisterSerializer(new UtcDateTimeOffsetSerializer());
 
         var conventions = new ConventionPack
@@ -37,7 +39,7 @@ public static class MongoMappings
             BsonClassMap.RegisterClassMap<Job>(map =>
             {
                 map.AutoMap();
-                map.MapIdMember(job => job.Id);
+                map.MapIdMember(job => job.Id).SetSerializer(new GuidSerializer(BsonType.String));
             });
         }
 
@@ -47,6 +49,7 @@ public static class MongoMappings
             {
                 map.AutoMap();
                 map.MapIdMember(document => document.Id);
+                map.MapMember(document => document.JobId).SetSerializer(new GuidSerializer(BsonType.String));
             });
         }
     }
