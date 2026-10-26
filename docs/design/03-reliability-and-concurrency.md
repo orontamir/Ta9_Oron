@@ -53,7 +53,7 @@ POST /api/process ──TryWrite──► Channel<ProcessingJob>(capacity: Queue
 | 9 | **Single document throws** | That document is `Failed` with an error and the others continue. The job is `Completed` with `summary.failed > 0`. The job is `Failed` only if **every** document failed. |
 | 10 | **Cancel during processing** | Job → `Cancelled` right away (the user sees it). A best-effort `DELETE /api/process/{id}` is sent. A late `JobCompleted` is ignored by the state machine. |
 | 11 | **Delete an active job** | 409, because deleting would orphan in-flight work. Cancel it first. |
-| 12 | **Mongo down** | Readiness reports 503. API calls return 503 ProblemDetails. WS events are **not acked**, so the processor keeps them and resends them. Background loops log and retry on the next tick. |
+| 12 | **Mongo down** | Readiness reports 503. API calls fail fast (5s server-selection timeout instead of the driver's 30s) and return 503 ProblemDetails through a dedicated exception handler. WS events are **not acked**, so the processor keeps them and resends them. Background loops log and retry on the next tick. |
 | 13 | **Audit service down** | Job is unaffected. The `auditPublished=false` flag on the job acts as an outbox, and the publisher retries with backoff. |
 | 14 | **Job Service restart** | All state is in Mongo. The dispatcher picks up `Pending` jobs, the reconciler covers `Queued`/`Processing`, and the processor reconnects its WS and replays its outbox. |
 

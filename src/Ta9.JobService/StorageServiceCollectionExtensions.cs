@@ -23,7 +23,14 @@ public static class StorageServiceCollectionExtensions
             .ValidateOnStart();
 
         // Mongo (lazy singletons)
-        services.AddSingleton<IMongoClient>(sp => new MongoClient(sp.GetRequiredService<IOptions<StorageOptions>>().Value.Mongo.ConnectionString));
+        services.AddSingleton<IMongoClient>(sp =>
+        {
+            var settings = MongoClientSettings.FromConnectionString(sp.GetRequiredService<IOptions<StorageOptions>>().Value.Mongo.ConnectionString);
+            // Fail fast (→ 503) instead of the driver's 30s default when the database is down.
+            settings.ServerSelectionTimeout = TimeSpan.FromSeconds(5);
+            settings.ConnectTimeout = TimeSpan.FromSeconds(5);
+            return new MongoClient(settings);
+        });
         services.AddSingleton(sp => sp.GetRequiredService<IMongoClient>().GetDatabase(sp.GetRequiredService<IOptions<StorageOptions>>().Value.Mongo.Database));
         services.AddSingleton<MongoJobRepository>();
         services.AddSingleton<MongoJobDocumentRepository>();

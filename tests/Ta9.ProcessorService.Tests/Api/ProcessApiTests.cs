@@ -90,6 +90,19 @@ public sealed class ProcessApiTests : IDisposable
     }
 
     [Fact]
+    public async Task Post_accepts_empty_content()
+    {
+        // Regression: MVC's implicit [Required] on non-nullable strings used to reject "" before our validator ran.
+        var client = CreateClient();
+        var request = new ProcessJobRequest(Guid.NewGuid(), [new ProcessDocumentRequest(0, "empty.txt", "")]);
+
+        (await client.PostAsJsonAsync("/api/process", request)).StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+        var completed = await WaitForStatusAsync(client, request.JobId, ProcessingStatus.Completed);
+        completed.Results![0].WordCount.Should().Be(0);
+    }
+
+    [Fact]
     public async Task Post_malformed_json_returns_400()
     {
         var client = CreateClient();

@@ -12,7 +12,8 @@ public class Program
         builder.Services.AddProcessing(builder.Configuration);
 
         builder.Services
-            .AddControllers()
+            // Our validators own every input rule (e.g. empty content is valid); don't let MVC add an implicit [Required].
+            .AddControllers(o => o.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true)
             .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen();
