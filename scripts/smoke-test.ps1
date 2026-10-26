@@ -24,9 +24,10 @@ function New-JobBody([int]$index) {
 }
 
 $stopwatch = [Diagnostics.Stopwatch]::StartNew()
-$created = for ($j = 0; $j -lt $Jobs; $j++) {
+# @() keeps a single job as an array (Windows PowerShell 5.1 has no .Count on a lone object).
+$created = @(for ($j = 0; $j -lt $Jobs; $j++) {
     Invoke-RestMethod -Method Post -Uri "$JobsUrl/api/jobs" -ContentType "application/json; charset=utf-8" -Body (New-JobBody $j)
-}
+})
 Write-Host "Created $($created.Count) job(s) with $Documents document(s) each"
 
 $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
