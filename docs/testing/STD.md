@@ -88,7 +88,7 @@ dotnet test Ta9.sln --filter "FullyQualifiedName~JobDispatcherTests"          # 
 ### 4.1 Latest execution results
 | Run | Result |
 |---|---|
-| Automated suite — `dotnet test Ta9.sln` (Windows 11, Docker Desktop, 2026-10-26) | **407 passed, 0 failed, 0 skipped** (≈ 26 s, 2026-10-27) — before the 33 logging tests (§7, Logging & Observability) were added; re-run pending |
+| Automated suite — `dotnet test Ta9.sln` (Windows 11, Docker Desktop, 2026-10-27) | **440 passed, 0 failed, 0 skipped** (≈ 24 s); 311 test methods, including the 33 logging tests |
 | Docker Compose deployment — `docker compose ps` | All 4 containers **healthy** |
 | Smoke test — 1 job × 3 documents | **Passed** — Completed, 3/3 succeeded, audit entry recorded |
 | Load scenario — 10 jobs × 1,000 documents (`smoke-test.ps1 -Jobs 10 -Documents 1000`) | **Passed** — every job shown Completed with 1000/1000 succeeded (console output was truncated after the 7th job) |

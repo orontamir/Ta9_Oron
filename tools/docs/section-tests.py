@@ -111,7 +111,7 @@ conc = f"""## 7. Tests for this section
 |---|---|---|---|
 | MT-03 | `powershell -ExecutionPolicy Bypass -File .\\scripts\\smoke-test.ps1 -Jobs 10 -Documents 1000` against the Docker Desktop stack | All 10 jobs Completed, 1,000 / 1,000 documents succeeded each | Passed (2026-10-26) |
 
-All automated tests listed here passed in the latest full run (404 / 404).
+All automated tests listed here passed in the latest full run (440 / 440, 2026-10-27).
 """
 replace_section(ROOT / "docs/concurrency/CONCURRENCY.md", "## 7. Tests for this section", None, conc)
 
@@ -166,7 +166,7 @@ Tests of the other §5 scenarios (invalid input, processor unreachable, storage 
 
 {table(catalog, WEBSOCKET)}
 
-All automated tests listed here passed in the latest full run (404 / 404).
+All automated tests listed here passed in the latest full run (440 / 440, 2026-10-27).
 
 ### 5.3 Manual test (Docker Desktop) — STD MT-07
 
@@ -232,7 +232,7 @@ storage = f"""## 7. Tests for this section
 
 {table(catalog, STORAGE)}
 
-Contract suites against MongoDB need Docker (`Category=Integration`, Testcontainers). All tests listed here passed in the latest full run (404 / 404), except `MongoUnavailableTests` (JS-143..145), added afterwards; re-run pending.
+Contract suites against MongoDB need Docker (`Category=Integration`, Testcontainers). All tests listed here passed in the latest full run (440 / 440, 2026-10-27).
 
 ### 7.3 Manual tests
 
@@ -295,7 +295,7 @@ logging_md = f"""## 5. Tests for this section
 
 {table(catalog, LOGGING)}
 
-Tests marked as requiring Docker run with `Category=Integration` (Testcontainers). The logging tests were added after the latest full run (407 / 407); re-run pending.
+Tests marked as requiring Docker run with `Category=Integration` (Testcontainers). All tests listed here passed in the latest full run (440 / 440, 2026-10-27).
 
 ### 5.3 Manual tests
 

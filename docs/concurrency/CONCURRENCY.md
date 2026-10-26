@@ -189,5 +189,5 @@ The complete catalog of the system's tests, with strategy, environment, traceabi
 |---|---|---|---|
 | MT-03 | `powershell -ExecutionPolicy Bypass -File .\scripts\smoke-test.ps1 -Jobs 10 -Documents 1000` against the Docker Desktop stack | All 10 jobs Completed, 1,000 / 1,000 documents succeeded each | Passed (2026-10-26) |
 
-All automated tests listed here passed in the latest full run (404 / 404).
+All automated tests listed here passed in the latest full run (440 / 440, 2026-10-27).
 

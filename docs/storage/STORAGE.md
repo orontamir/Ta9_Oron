@@ -209,7 +209,7 @@ The complete catalog of the system's tests, with strategy, environment, traceabi
 | JS-135 | Readiness reports storage health | `JobsApiTests` | Component | Fact |
 | AS-005 | Readiness reports storage | `AuditApiTests` | Component | Fact |
 
-Contract suites against MongoDB need Docker (`Category=Integration`, Testcontainers). All tests listed here passed in the latest full run (404 / 404), except `MongoUnavailableTests` (JS-143..145), added afterwards; re-run pending.
+Contract suites against MongoDB need Docker (`Category=Integration`, Testcontainers). All tests listed here passed in the latest full run (440 / 440, 2026-10-27).
 
 ### 7.3 Manual tests
 

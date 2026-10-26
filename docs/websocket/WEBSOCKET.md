@@ -224,7 +224,7 @@ Tests of the other §5 scenarios (invalid input, processor unreachable, storage 
 | E2E-001 | Job flows through processor websocket and audit | `EndToEndTests` | Integration (E2E) | Fact |
 | E2E-004 | Job lost by a processor restart is redispatched and completes | `EndToEndTests` | Integration (E2E) | Fact |
 
-All automated tests listed here passed in the latest full run (404 / 404).
+All automated tests listed here passed in the latest full run (440 / 440, 2026-10-27).
 
 ### 5.3 Manual test (Docker Desktop) — STD MT-07
 

@@ -214,7 +214,7 @@ The complete catalog of the system's tests, with strategy, environment, traceabi
 | PS-104 | Liveness endpoint is healthy | `ProcessApiTests` | Component | Fact |
 | E2E-006 | Job flow is logged to mongodb by all three services under one correlation id | `EndToEndTests` | Integration (E2E) | Fact |
 
-Tests marked as requiring Docker run with `Category=Integration` (Testcontainers). The logging tests were added after the latest full run (407 / 407); re-run pending.
+Tests marked as requiring Docker run with `Category=Integration` (Testcontainers). All tests listed here passed in the latest full run (440 / 440, 2026-10-27).
 
 ### 5.3 Manual tests
 
