@@ -61,6 +61,23 @@ public sealed class MongoJobRepository : IJobRepository
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken) =>
         (await _jobs.DeleteOneAsync(job => job.Id == id, cancellationToken)).DeletedCount == 1;
 
+    public async Task<Job?> TryClaimNextForDispatchAsync(DateTimeOffset now, DateTimeOffset leaseUntil, CancellationToken cancellationToken) =>
+        // A single findOneAndUpdate is atomic, so concurrent dispatch loops (or instances) never claim the same job.
+        await _jobs.FindOneAndUpdateAsync(
+            Builders<Job>.Filter.And(
+                Builders<Job>.Filter.Eq(job => job.Status, JobStatus.Pending),
+                Builders<Job>.Filter.Lte(job => job.NextDispatchAt, now),
+                Builders<Job>.Filter.Or(
+                    Builders<Job>.Filter.Eq(job => job.LeaseUntil, null),
+                    Builders<Job>.Filter.Lte(job => job.LeaseUntil, now))),
+            Builders<Job>.Update.Set(job => job.LeaseUntil, leaseUntil).Inc(job => job.Version, 1L),
+            new FindOneAndUpdateOptions<Job>
+            {
+                Sort = Builders<Job>.Sort.Ascending(job => job.NextDispatchAt),
+                ReturnDocument = ReturnDocument.After
+            },
+            cancellationToken);
+
     public Task EnsureIndexesAsync(CancellationToken cancellationToken) =>
         _jobs.Indexes.CreateManyAsync(
         [

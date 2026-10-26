@@ -1,7 +1,10 @@
-namespace Ta9.ProcessorService.Infrastructure.Events;
+namespace Ta9.ServiceDefaults;
 
-/// <summary>Exponential backoff with ±20% jitter so many processors don't reconnect in lockstep.</summary>
-public static class ReconnectBackoff
+/// <summary>
+/// Exponential backoff (initial × 2^(attempt-1), capped) with ±20% jitter, so many clients retrying the same
+/// dependency do not hit it in lockstep. Used for WS reconnects and job dispatch retries.
+/// </summary>
+public static class ExponentialBackoff
 {
     private const double Jitter = 0.2;
 

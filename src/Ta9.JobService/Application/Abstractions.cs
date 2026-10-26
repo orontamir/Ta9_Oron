@@ -24,6 +24,12 @@ public interface IJobRepository
     Task<bool> TryUpdateAsync(Job job, CancellationToken cancellationToken);
 
     Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Atomically claims the Pending job that has been due the longest (<c>NextDispatchAt ≤ now</c>, no live lease)
+    /// by setting <see cref="Job.LeaseUntil"/>. Returns null when nothing is due. Two concurrent callers never get the same job.
+    /// </summary>
+    Task<Job?> TryClaimNextForDispatchAsync(DateTimeOffset now, DateTimeOffset leaseUntil, CancellationToken cancellationToken);
 }
 
 public interface IJobDocumentRepository

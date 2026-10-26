@@ -18,6 +18,8 @@ public class JobRepositoryExtensionsTests
         public Task<Job?> GetAsync(Guid id, CancellationToken ct) => inner.GetAsync(id, ct);
         public Task<PagedResult<Job>> ListAsync(JobStatus? status, int page, int pageSize, CancellationToken ct) => inner.ListAsync(status, page, pageSize, ct);
         public Task<bool> DeleteAsync(Guid id, CancellationToken ct) => inner.DeleteAsync(id, ct);
+        public Task<Job?> TryClaimNextForDispatchAsync(DateTimeOffset now, DateTimeOffset leaseUntil, CancellationToken ct) =>
+            inner.TryClaimNextForDispatchAsync(now, leaseUntil, ct);
 
         public Task<bool> TryUpdateAsync(Job job, CancellationToken ct) =>
             Interlocked.Decrement(ref _remainingConflicts) >= 0 ? Task.FromResult(false) : inner.TryUpdateAsync(job, ct);

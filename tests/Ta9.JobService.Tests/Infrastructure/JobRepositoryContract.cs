@@ -116,6 +116,61 @@ public abstract class JobRepositoryContract
     }
 
     [Fact]
+    public async Task Claim_leases_the_due_pending_job_until_the_lease_expires()
+    {
+        var job = TestJobs.New();
+        await Jobs.InsertAsync(job, None);
+        var leaseUntil = TestJobs.T0.AddMinutes(1);
+
+        var claimed = await Jobs.TryClaimNextForDispatchAsync(TestJobs.T0, leaseUntil, None);
+
+        claimed!.Id.Should().Be(job.Id);
+        claimed.LeaseUntil.Should().Be(leaseUntil);
+        claimed.Version.Should().Be(1, "claiming is a write; stale copies must not overwrite it");
+        (await Jobs.TryClaimNextForDispatchAsync(TestJobs.T0.AddSeconds(30), leaseUntil, None)).Should().BeNull("the lease is still live");
+        (await Jobs.TryClaimNextForDispatchAsync(leaseUntil, leaseUntil.AddMinutes(1), None))!.Id.Should().Be(job.Id, "an expired lease can be reclaimed");
+    }
+
+    [Fact]
+    public async Task Claim_skips_jobs_that_are_not_due_or_not_pending()
+    {
+        await Jobs.InsertAsync(TestJobs.New(createdAt: TestJobs.T0.AddMinutes(5)), None); // due in 5 minutes
+        await Jobs.InsertAsync(TestJobs.InStatus(JobStatus.Queued), None);
+        await Jobs.InsertAsync(TestJobs.InStatus(JobStatus.Cancelled), None);
+
+        (await Jobs.TryClaimNextForDispatchAsync(TestJobs.T0, TestJobs.T0.AddMinutes(1), None)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Claim_takes_the_longest_waiting_job_first()
+    {
+        var newer = TestJobs.New(createdAt: TestJobs.T0.AddSeconds(10));
+        var older = TestJobs.New(createdAt: TestJobs.T0);
+        await Jobs.InsertAsync(newer, None);
+        await Jobs.InsertAsync(older, None);
+
+        var now = TestJobs.T0.AddMinutes(1);
+        (await Jobs.TryClaimNextForDispatchAsync(now, now.AddMinutes(1), None))!.Id.Should().Be(older.Id);
+        (await Jobs.TryClaimNextForDispatchAsync(now, now.AddMinutes(1), None))!.Id.Should().Be(newer.Id);
+    }
+
+    [Fact]
+    public async Task Concurrent_claims_never_hand_out_the_same_job_twice()
+    {
+        for (var i = 0; i < 5; i++)
+        {
+            await Jobs.InsertAsync(TestJobs.New(), None);
+        }
+
+        var now = TestJobs.T0.AddMinutes(1);
+        var claims = await Task.WhenAll(Enumerable.Range(0, 20).Select(_ =>
+            Task.Run(() => Jobs.TryClaimNextForDispatchAsync(now, now.AddMinutes(1), None))));
+
+        var claimed = claims.Where(j => j is not null).Select(j => j!.Id).ToList();
+        claimed.Should().HaveCount(5).And.OnlyHaveUniqueItems();
+    }
+
+    [Fact]
     public async Task Delete_removes_the_job_once()
     {
         var job = TestJobs.New();

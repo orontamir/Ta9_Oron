@@ -40,6 +40,8 @@ public enum DeleteJobOutcome
 public sealed class JobManager(
     IJobRepository jobs,
     IJobDocumentRepository documents,
+    IProcessorClient processor,
+    IJobDispatchSignal dispatchSignal,
     TimeProvider time,
     ILogger<JobManager> logger)
 {
@@ -56,6 +58,7 @@ public sealed class JobManager(
         await jobs.InsertAsync(job, cancellationToken);
 
         logger.LogInformation("Job {JobId} created with {DocumentCount} documents", job.Id, job.TotalDocuments);
+        dispatchSignal.Notify();
         return job;
     }
 
@@ -85,14 +88,25 @@ public sealed class JobManager(
     public async Task<CancelJobResult> CancelAsync(Guid jobId, CancellationToken cancellationToken)
     {
         var now = time.GetUtcNow();
-        var update = await jobs.UpdateAsync(jobId, job => job.TryCancel(now), cancellationToken);
+        var previousStatus = JobStatus.Pending;
+        var update = await jobs.UpdateAsync(jobId, job =>
+        {
+            previousStatus = job.Status;
+            return job.TryCancel(now);
+        }, cancellationToken);
 
         switch (update.Outcome)
         {
             case JobUpdateOutcome.NotFound:
                 return new CancelJobResult(CancelJobOutcome.NotFound, null);
             case JobUpdateOutcome.Applied:
-                logger.LogInformation("Job {JobId} cancelled", jobId);
+                logger.LogInformation("Job {JobId} cancelled (was {PreviousStatus})", jobId, previousStatus);
+                if (previousStatus is JobStatus.Queued or JobStatus.Processing)
+                {
+                    // The user-visible state is already Cancelled; stopping the work is best effort
+                    // (a late JobCompleted is ignored by the state machine anyway).
+                    await processor.CancelAsync(jobId, cancellationToken);
+                }
                 return new CancelJobResult(CancelJobOutcome.Cancelled, update.Job);
             default:
                 // Cancelling twice is idempotent; cancelling a completed/failed job is a conflict.

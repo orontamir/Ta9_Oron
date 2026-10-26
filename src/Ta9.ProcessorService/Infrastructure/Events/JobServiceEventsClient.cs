@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using Microsoft.Extensions.Options;
 using Ta9.Contracts.Events;
+using Ta9.ServiceDefaults;
 
 namespace Ta9.ProcessorService.Infrastructure.Events;
 
@@ -55,7 +56,7 @@ public sealed class JobServiceEventsClient(
                 }
             }
 
-            var delay = ReconnectBackoff.Compute(Math.Max(failedAttempts, 1), settings.ReconnectInitialDelay, settings.ReconnectMaxDelay);
+            var delay = ExponentialBackoff.Compute(Math.Max(failedAttempts, 1), settings.ReconnectInitialDelay, settings.ReconnectMaxDelay);
             try
             {
                 await Task.Delay(delay, time, stoppingToken);

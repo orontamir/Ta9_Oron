@@ -195,6 +195,17 @@ public sealed class JobsApiTests : IClassFixture<JobServiceFactory>
     }
 
     [Fact]
+    public async Task Cancelling_a_dispatched_job_tells_the_processor()
+    {
+        var job = await CreateJobAsync();
+        await _factory.SetStatusAsync(job.Id, j => j.TryMarkQueued(DateTimeOffset.UtcNow));
+
+        (await _client.PostAsync($"/api/jobs/{job.Id}/cancel", null)).StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+        _factory.Processor.Cancelled.Should().Contain(job.Id);
+    }
+
+    [Fact]
     public async Task Delete_requires_a_finished_job_and_removes_its_documents()
     {
         var job = await CreateJobAsync("a", "b");
@@ -226,6 +237,7 @@ public sealed class JobsApiStorageFailureTests : IClassFixture<JobServiceFactory
         public Task<PagedResult<Job>> ListAsync(JobStatus? status, int page, int pageSize, CancellationToken ct) => throw Down();
         public Task<bool> TryUpdateAsync(Job job, CancellationToken ct) => throw Down();
         public Task<bool> DeleteAsync(Guid id, CancellationToken ct) => throw Down();
+        public Task<Job?> TryClaimNextForDispatchAsync(DateTimeOffset now, DateTimeOffset leaseUntil, CancellationToken ct) => throw Down();
     }
 
     private readonly HttpClient _client;

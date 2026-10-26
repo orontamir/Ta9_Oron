@@ -13,10 +13,12 @@ public class JobManagerTests
 
     private readonly InMemoryJobRepository _jobs = new();
     private readonly InMemoryJobDocumentRepository _documents = new();
+    private readonly FakeProcessorClient _processor = new();
+    private readonly JobDispatchSignal _signal = new(TimeProvider.System);
     private readonly JobManager _manager;
 
     public JobManagerTests() =>
-        _manager = new JobManager(_jobs, _documents, TimeProvider.System, NullLogger<JobManager>.Instance);
+        _manager = new JobManager(_jobs, _documents, _processor, _signal, TimeProvider.System, NullLogger<JobManager>.Instance);
 
     private static CreateJobCommand Command(params string[] contents) =>
         new("job", contents.Select((c, i) => new NewDocument($"doc-{i}", c)).ToList());
@@ -35,6 +37,30 @@ public class JobManagerTests
         stored.TotalDocuments.Should().Be(2);
         stored.CorrelationId.Should().Be("corr-42");
         (await _documents.GetByJobAsync(job.Id, None)).Select(d => d.Content).Should().Equal("first", "second");
+    }
+
+    [Fact]
+    public async Task Create_wakes_the_dispatcher()
+    {
+        await _manager.CreateAsync(Command("a"), None);
+
+        var woken = _signal.WaitAsync(TimeSpan.FromSeconds(5), None);
+        var first = await Task.WhenAny(woken, Task.Delay(TimeSpan.FromSeconds(1)));
+        (first == woken).Should().BeTrue("creating a job signals the dispatcher");
+    }
+
+    [Theory]
+    [InlineData(JobStatus.Pending, false)]
+    [InlineData(JobStatus.Queued, true)]
+    [InlineData(JobStatus.Processing, true)]
+    public async Task Cancel_propagates_to_the_processor_only_when_it_has_the_job(JobStatus status, bool expectProcessorCancel)
+    {
+        var job = TestJobs.InStatus(status);
+        await _jobs.InsertAsync(job, None);
+
+        await _manager.CancelAsync(job.Id, None);
+
+        _processor.Cancelled.Contains(job.Id).Should().Be(expectProcessorCancel);
     }
 
     [Fact]

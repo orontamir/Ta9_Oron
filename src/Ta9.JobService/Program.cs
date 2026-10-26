@@ -13,6 +13,7 @@ public class Program
         builder.AddServiceDefaults("job-service");
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddJobStorage(builder.Configuration);
+        builder.Services.AddProcessorIntegration(builder.Configuration);
         builder.Services.AddSingleton<JobManager>();
         builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 

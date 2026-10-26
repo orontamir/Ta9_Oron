@@ -59,4 +59,28 @@ public sealed class InMemoryJobRepository : IJobRepository
 
     public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken) =>
         Task.FromResult(_jobs.TryRemove(id, out _));
+
+    public Task<Job?> TryClaimNextForDispatchAsync(DateTimeOffset now, DateTimeOffset leaseUntil, CancellationToken cancellationToken)
+    {
+        lock (_writeGate)
+        {
+            var candidate = _jobs.Values
+                .Where(job => job.Status == JobStatus.Pending
+                              && job.NextDispatchAt <= now
+                              && (job.LeaseUntil is null || job.LeaseUntil <= now))
+                .OrderBy(job => job.NextDispatchAt)
+                .FirstOrDefault();
+
+            if (candidate is null)
+            {
+                return Task.FromResult<Job?>(null);
+            }
+
+            var claimed = candidate.Clone();
+            claimed.LeaseUntil = leaseUntil;
+            claimed.Version++;
+            _jobs[claimed.Id] = claimed;
+            return Task.FromResult<Job?>(claimed.Clone());
+        }
+    }
 }
