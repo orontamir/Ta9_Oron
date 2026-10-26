@@ -1,0 +1,13 @@
+bin/
+obj/
+.vs/
+.vscode/
+.idea/
+*.user
+TestResults/
+*.swp
+# Assignment brief is not part of the submission
+doc/
+# Never commit feed configuration (may contain credentials)
+NuGet.Config
+nuget.config
