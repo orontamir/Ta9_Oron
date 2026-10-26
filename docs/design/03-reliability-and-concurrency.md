@@ -46,7 +46,7 @@ POST /api/process ──TryWrite──► Channel<ProcessingJob>(capacity: Queue
 | 2 | **Processor unreachable** (connection refused, timeout, 5xx) | Job stays `Pending`. Retries use exponential backoff + jitter (2s, 4s, 8s… cap 60s). After 5 attempts: `Failed("Processor unreachable")`. |
 | 3 | **Processor overloaded** (503 queue full) | Retried after `Retry-After`. **Does not consume** an attempt; it is backpressure, not a failure. |
 | 4 | **Processor rejects the payload** (400) | `Failed` immediately (non-retryable) and logged as an error, because it means a contract bug. |
-| 5 | **WS disconnected** | Processor reconnects with backoff (1s → 30s). Lifecycle events wait in a bounded outbox (10k) and are resent on reconnect until acked. Progress events are dropped while disconnected. |
+| 5 | **WS disconnected** | Processor reconnects with backoff (1s → 30s, ±20% jitter). Lifecycle events wait in a bounded outbox (10k) and are resent on every reconnect, and also when no ack arrives within 30s, until acked. Progress events are dropped while disconnected. Readiness reports Degraded. |
 | 6 | **Duplicate / out-of-order events** | Absorbed by §2 and acked anyway. |
 | 7 | **Event lost** (e.g. outbox overflow, processor crash after work finished) | The reconciler sees a stale `Queued`/`Processing` job (60s without updates) and pulls the state with `GET /api/process/{id}`. |
 | 8 | **Processor restart mid-job** | Reconciler gets 404 → back to `Pending` → redispatch. This is safe because the analysis is deterministic and idempotent. After 3 redispatches: `Failed("Processor lost job repeatedly")`. |

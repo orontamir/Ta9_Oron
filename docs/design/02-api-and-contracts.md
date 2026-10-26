@@ -80,7 +80,7 @@ data: {"jobId":"…","status":"Completed",…}
 | GET | `/api/process/{jobId}` | Status, plus results once terminal (kept in memory for `ResultsTtl`, default 1h) | 200, 404 |
 | GET | `/api/process` | List known jobs (diagnostics) | 200 |
 | DELETE | `/api/process/{jobId}` | Cancel (cooperative `CancellationToken`) | 202, 404 |
-| GET | `/health/live`, `/health/ready` | Ready = the WS connection to the Job Service is up | 200 / 503 |
+| GET | `/health/live`, `/health/ready` | Ready reports **Degraded** (still HTTP 200) while the WS connection is down, because work is still accepted and events are buffered | 200 / 503 |
 
 ```json
 POST /api/process
@@ -108,7 +108,7 @@ POST /api/process
 | type | payload | delivery |
 |---|---|---|
 | `JobStarted` | `{ "totalDocuments": 1000 }` | at-least-once (outbox + ack) |
-| `JobProgress` | `{ "processedDocuments": 300, "totalDocuments": 1000 }` | **best-effort**, throttled (≥10% step or ≥2s), not replayed |
+| `JobProgress` | `{ "processedDocuments": 300, "totalDocuments": 1000 }` | **best-effort**: throttled (≥10% step or ≥2s), coalesced to the latest per job, dropped while disconnected, never replayed |
 | `JobCompleted` | `{ "summary": {…}, "results": [ DocumentResult… ] }` | at-least-once |
 | `JobFailed` | `{ "errorCode": "ProcessingError", "reason": "…" }` | at-least-once |
 | `JobCancelled` | `{}` | at-least-once |
