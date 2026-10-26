@@ -1,0 +1,16 @@
+**/bin/
+**/obj/
+**/TestResults/
+.git/
+.vs/
+.vscode/
+.idea/
+doc/
+docs/
+tests/
+scripts/
+*.md
+**/*.user
+**/appsettings.Development.json
+**/NuGet.Config
+**/nuget.config

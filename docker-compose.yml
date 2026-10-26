@@ -1,0 +1,103 @@
+# docker compose up --build
+#   Job Service       http://localhost:5001/swagger
+#   Processor Service http://localhost:5002/swagger
+#   Audit Service     http://localhost:5003/swagger
+#   MongoDB           mongodb://localhost:27017
+
+name: ta9
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  environment: &common-environment
+    ASPNETCORE_ENVIRONMENT: Production
+    Logging__UseJsonConsole: "true"
+
+services:
+  mongo:
+    image: mongo:7.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  job-service:
+    <<: *service-defaults
+    build:
+      context: .
+      args:
+        PROJECT: Ta9.JobService
+    image: ta9/job-service
+    ports:
+      - "5001:8080"
+    environment:
+      <<: *common-environment
+      Storage__Provider: Mongo
+      Storage__Mongo__ConnectionString: mongodb://mongo:27017
+      Storage__Mongo__Database: ta9_jobs
+      Processor__BaseUrl: http://processor-service:8080/
+      Audit__BaseUrl: http://audit-service:8080/
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  processor-service:
+    <<: *service-defaults
+    build:
+      context: .
+      args:
+        PROJECT: Ta9.ProcessorService
+    image: ta9/processor-service
+    ports:
+      - "5002:8080"
+    environment:
+      <<: *common-environment
+      JobServiceEvents__Url: ws://job-service:8080/ws/processor-events
+      Processing__MaxConcurrentJobs: "10"
+      Processing__QueueCapacity: "100"
+      Processing__DocParallelismPerJob: "2"
+    depends_on:
+      # Not strictly required (the WS client reconnects with backoff), it just makes startup logs quieter.
+      job-service:
+        condition: service_healthy
+    healthcheck:
+      # Ready reports Degraded (HTTP 200) while the WS link is down: work is still accepted and buffered.
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  audit-service:
+    <<: *service-defaults
+    build:
+      context: .
+      args:
+        PROJECT: Ta9.AuditService
+    image: ta9/audit-service
+    ports:
+      - "5003:8080"
+    environment:
+      <<: *common-environment
+      Storage__Provider: Mongo
+      Storage__ConnectionString: mongodb://mongo:27017
+      Storage__Database: ta9_audit
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  mongo-data:

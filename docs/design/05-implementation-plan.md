@@ -16,7 +16,7 @@ Work proceeds in small steps. Each step ends with **green tests and a commit**, 
 | **9** | SSE endpoint + in-process broadcaster | Snapshot first, receives updates, closes on terminal, slow subscriber doesn't block (bounded per-subscriber channel) | 0.5h |
 | **10** | Audit Service + Job Service `AuditPublisher` (outbox flag) | Audit API (idempotent upsert, 404). Publisher retries and marks published | 0.75h |
 | **11** | Cross-service E2E: Testcontainers Mongo + in-process Job and Processor hosts connected over real WS | Happy path, **10 concurrent jobs × 1,000 docs**, processor down → Failed, processor restart → redispatch | 0.75h |
-| **12** | Docker: Dockerfiles (multi-stage), `docker-compose.yml` (mongo + 3 services, healthchecks), Postman collection + Swagger flow | `docker compose up`, then run the Postman collection | 0.5h |
+| **12** | Docker: one parameterized multi-stage Dockerfile (non-root, cached restore layer), `docker-compose.yml` (mongo + 3 services, healthchecks, startup ordering), Postman collection, smoke-test scripts (PowerShell + bash) | `docker compose up --build`, then `scripts/smoke-test.ps1` or the Postman collection | 0.5h |
 | **13** | README: run, test, architecture summary, decisions, concurrency, WS behaviour, limitations, **AI usage** | — | 0.5h |
 
 **Total: about 10.5h.** If time runs short, steps 9 (SSE) and 10 (Audit) are the first to trim. Steps 0–8 + 11–13 cover all mandatory requirements.
