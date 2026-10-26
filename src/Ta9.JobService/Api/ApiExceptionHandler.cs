@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
-using MongoDB.Driver;
 using Ta9.JobService.Application;
 
 namespace Ta9.JobService.Api;
@@ -16,7 +15,7 @@ public sealed class ApiExceptionHandler(IProblemDetailsService problemDetails, I
     {
         var (status, title) = exception switch
         {
-            TimeoutException or MongoConnectionException => (StatusCodes.Status503ServiceUnavailable, "Storage unavailable"),
+            StorageUnavailableException => (StatusCodes.Status503ServiceUnavailable, "Storage unavailable"),
             JobConcurrencyException => (StatusCodes.Status409Conflict, "Concurrent modification"),
             _ => (0, string.Empty)
         };

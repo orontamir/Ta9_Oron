@@ -5,7 +5,7 @@
 | **Document** | Software Test Description (STD) |
 | **System** | TA9 Document Processing — Job Service · Processor Service · Audit Service |
 | **Test framework** | xUnit 2.9 · FluentAssertions 7 · NSubstitute · ASP.NET Core TestServer · Testcontainers (MongoDB 7) |
-| **Automated tests** | 275 test methods → **404 executions** (theories and dual-store contract suites expanded) |
+| **Automated tests** | 278 test methods → **407 executions** (theories and dual-store contract suites expanded) |
 | **Related documents** | `docs/hld/TA9-HLD.docx` (design) · `docs/installation/TA9-Installation-Guide.docx` (environment) · `README.md` |
 
 ## 1. Introduction
@@ -79,15 +79,15 @@ dotnet test Ta9.sln --filter "FullyQualifiedName~JobDispatcherTests"          # 
 |---|---|---|---|
 | Ta9.ServiceDefaults.Tests | 4 | 13 | 25 |
 | Ta9.ProcessorService.Tests | 15 | 104 | 126 |
-| Ta9.JobService.Tests | 19 | 142 | 231 |
+| Ta9.JobService.Tests | 20 | 145 | 234 |
 | Ta9.AuditService.Tests | 3 | 11 | 17 |
 | Ta9.IntegrationTests | 1 | 5 | 5 |
-| **Total** | **42** | **275** | **404** |
+| **Total** | **43** | **278** | **407** |
 
 ### 4.1 Latest execution results
 | Run | Result |
 |---|---|
-| Automated suite — `dotnet test Ta9.sln` (Windows 11, Docker Desktop, 2026-10-26) | **404 passed, 0 failed, 0 skipped** (≈ 34 s) |
+| Automated suite — `dotnet test Ta9.sln` (Windows 11, Docker Desktop, 2026-10-26) | **404 passed, 0 failed, 0 skipped** (≈ 34 s) — before the 3 `MongoUnavailableTests` were added; re-run pending |
 | Docker Compose deployment — `docker compose ps` | All 4 containers **healthy** |
 | Smoke test — 1 job × 3 documents | **Passed** — Completed, 3/3 succeeded, audit entry recorded |
 | Load scenario — 10 jobs × 1,000 documents (`smoke-test.ps1 -Jobs 10 -Documents 1000`) | **Passed** — every job shown Completed with 1000/1000 succeeded (console output was truncated after the 7th job) |
@@ -675,7 +675,7 @@ Real streaming response read line by line: snapshot, every change, end at termin
 #### JobsApiStorageFailureTests
 **Level:** Component · **Under test:** ApiExceptionHandler
 
-Storage timeout surfaces as a retryable 503 ProblemDetails.
+A storage-neutral `StorageUnavailableException` surfaces as a retryable 503 ProblemDetails (the API does not reference MongoDB types).
 
 | ID | Test case | Kind |
 |---|---|---|
@@ -694,6 +694,17 @@ Real WebSocket: ack after handling, duplicates/unknown acked, bad message skippe
 | JS-140 | Events are processed in order per connection | Fact |
 | JS-141 | Plain http request is rejected | Fact |
 | JS-142 | Event that cannot be stored is not acknowledged | Fact |
+
+#### MongoUnavailableTests
+**Level:** Unit · **Under test:** MongoJobRepository, MongoJobDocumentRepository (MongoGuard)
+
+An unreachable MongoDB (closed port, 300 ms server-selection timeout, no Docker) is translated to `StorageUnavailableException`.
+
+| ID | Test case | Kind |
+|---|---|---|
+| JS-143 | Job repository reads and writes report storage unavailable | Fact |
+| JS-144 | Failed update keeps the version token unchanged | Fact |
+| JS-145 | Document repository reports storage unavailable | Fact |
 
 ### 7.4 Audit Service (Ta9.AuditService.Tests)
 

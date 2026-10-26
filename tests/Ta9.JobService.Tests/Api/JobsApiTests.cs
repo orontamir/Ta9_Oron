@@ -230,7 +230,8 @@ public sealed class JobsApiStorageFailureTests : IClassFixture<JobServiceFactory
 {
     private sealed class UnreachableJobRepository : IJobRepository
     {
-        private static Exception Down() => new TimeoutException("A timeout occurred after 5000ms selecting a server.");
+        private static Exception Down() =>
+            new StorageUnavailableException("MongoDB is unreachable.", new TimeoutException("A timeout occurred after 5000ms selecting a server."));
 
         public Task InsertAsync(Job job, CancellationToken ct) => throw Down();
         public Task<Job?> GetAsync(Guid id, CancellationToken ct) => throw Down();

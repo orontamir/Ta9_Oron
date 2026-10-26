@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Text;
 using Ta9.AuditService.Domain;
 using Ta9.Contracts;
@@ -12,17 +11,6 @@ public interface IAuditRepository
     Task<bool> TryInsertAsync(AuditEntry entry, CancellationToken cancellationToken);
 
     Task<AuditEntry?> GetAsync(Guid jobId, CancellationToken cancellationToken);
-}
-
-public sealed class InMemoryAuditRepository : IAuditRepository
-{
-    private readonly ConcurrentDictionary<Guid, AuditEntry> _entries = new();
-
-    public Task<bool> TryInsertAsync(AuditEntry entry, CancellationToken cancellationToken) =>
-        Task.FromResult(_entries.TryAdd(entry.JobId, entry.Clone()));
-
-    public Task<AuditEntry?> GetAsync(Guid jobId, CancellationToken cancellationToken) =>
-        Task.FromResult(_entries.TryGetValue(jobId, out var entry) ? entry.Clone() : null);
 }
 
 public sealed record RecordResult(bool Created, AuditEntry Entry);

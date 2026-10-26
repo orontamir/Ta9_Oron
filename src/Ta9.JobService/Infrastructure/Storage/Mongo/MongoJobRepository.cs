@@ -17,53 +17,62 @@ public sealed class MongoJobRepository : IJobRepository
     }
 
     public Task InsertAsync(Job job, CancellationToken cancellationToken) =>
-        _jobs.InsertOneAsync(job, options: null, cancellationToken);
+        MongoGuard.RunAsync(() => _jobs.InsertOneAsync(job, options: null, cancellationToken));
 
-    public async Task<Job?> GetAsync(Guid id, CancellationToken cancellationToken) =>
-        await _jobs.Find(job => job.Id == id).FirstOrDefaultAsync(cancellationToken);
+    public Task<Job?> GetAsync(Guid id, CancellationToken cancellationToken) =>
+        MongoGuard.RunAsync<Job?>(async () => await _jobs.Find(job => job.Id == id).FirstOrDefaultAsync(cancellationToken));
 
-    public async Task<PagedResult<Job>> ListAsync(JobStatus? status, int page, int pageSize, CancellationToken cancellationToken)
-    {
-        var filter = status is null
-            ? Builders<Job>.Filter.Empty
-            : Builders<Job>.Filter.Eq(job => job.Status, status.Value);
-
-        var total = await _jobs.CountDocumentsAsync(filter, options: null, cancellationToken);
-        var items = await _jobs.Find(filter)
-            .SortByDescending(job => job.CreatedAt)
-            .Skip((page - 1) * pageSize)
-            .Limit(pageSize)
-            .ToListAsync(cancellationToken);
-
-        return new PagedResult<Job>(items, page, pageSize, total);
-    }
-
-    public async Task<bool> TryUpdateAsync(Job job, CancellationToken cancellationToken)
-    {
-        var expectedVersion = job.Version;
-        job.Version = expectedVersion + 1;
-
-        var result = await _jobs.ReplaceOneAsync(
-            stored => stored.Id == job.Id && stored.Version == expectedVersion,
-            job,
-            new ReplaceOptions { IsUpsert = false },
-            cancellationToken);
-
-        if (result.MatchedCount == 1)
+    public Task<PagedResult<Job>> ListAsync(JobStatus? status, int page, int pageSize, CancellationToken cancellationToken) =>
+        MongoGuard.RunAsync(async () =>
         {
-            return true;
-        }
+            var filter = status is null
+                ? Builders<Job>.Filter.Empty
+                : Builders<Job>.Filter.Eq(job => job.Status, status.Value);
 
-        job.Version = expectedVersion;
-        return false;
-    }
+            var total = await _jobs.CountDocumentsAsync(filter, options: null, cancellationToken);
+            var items = await _jobs.Find(filter)
+                .SortByDescending(job => job.CreatedAt)
+                .Skip((page - 1) * pageSize)
+                .Limit(pageSize)
+                .ToListAsync(cancellationToken);
 
-    public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken) =>
-        (await _jobs.DeleteOneAsync(job => job.Id == id, cancellationToken)).DeletedCount == 1;
+            return new PagedResult<Job>(items, page, pageSize, total);
+        });
 
-    public async Task<Job?> TryClaimNextForDispatchAsync(DateTimeOffset now, DateTimeOffset leaseUntil, CancellationToken cancellationToken) =>
+    public Task<bool> TryUpdateAsync(Job job, CancellationToken cancellationToken) =>
+        MongoGuard.RunAsync(async () =>
+        {
+            var expectedVersion = job.Version;
+            job.Version = expectedVersion + 1;
+            try
+            {
+                var result = await _jobs.ReplaceOneAsync(
+                    stored => stored.Id == job.Id && stored.Version == expectedVersion,
+                    job,
+                    new ReplaceOptions { IsUpsert = false },
+                    cancellationToken);
+
+                if (result.MatchedCount == 1)
+                {
+                    return true;
+                }
+
+                job.Version = expectedVersion;
+                return false;
+            }
+            catch
+            {
+                job.Version = expectedVersion; // nothing was written: keep the caller's token consistent
+                throw;
+            }
+        });
+
+    public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken) =>
+        MongoGuard.RunAsync(async () => (await _jobs.DeleteOneAsync(job => job.Id == id, cancellationToken)).DeletedCount == 1);
+
+    public Task<Job?> TryClaimNextForDispatchAsync(DateTimeOffset now, DateTimeOffset leaseUntil, CancellationToken cancellationToken) =>
         // A single findOneAndUpdate is atomic, so concurrent dispatch loops (or instances) never claim the same job.
-        await _jobs.FindOneAndUpdateAsync(
+        MongoGuard.RunAsync<Job?>(async () => await _jobs.FindOneAndUpdateAsync(
             Builders<Job>.Filter.And(
                 Builders<Job>.Filter.Eq(job => job.Status, JobStatus.Pending),
                 Builders<Job>.Filter.Lte(job => job.NextDispatchAt, now),
@@ -76,23 +85,23 @@ public sealed class MongoJobRepository : IJobRepository
                 Sort = Builders<Job>.Sort.Ascending(job => job.NextDispatchAt),
                 ReturnDocument = ReturnDocument.After
             },
-            cancellationToken);
+            cancellationToken));
 
-    public async Task<IReadOnlyList<Job>> FindStaleActiveAsync(DateTimeOffset updatedBefore, int limit, CancellationToken cancellationToken) =>
-        await _jobs.Find(Builders<Job>.Filter.And(
+    public Task<IReadOnlyList<Job>> FindStaleActiveAsync(DateTimeOffset updatedBefore, int limit, CancellationToken cancellationToken) =>
+        MongoGuard.RunAsync<IReadOnlyList<Job>>(async () => await _jobs.Find(Builders<Job>.Filter.And(
                 Builders<Job>.Filter.In(job => job.Status, new[] { JobStatus.Queued, JobStatus.Processing }),
                 Builders<Job>.Filter.Lt(job => job.UpdatedAt, updatedBefore)))
             .SortBy(job => job.UpdatedAt)
             .Limit(limit)
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken));
 
-    public async Task<IReadOnlyList<Job>> FindUnpublishedTerminalAsync(int limit, CancellationToken cancellationToken) =>
-        await _jobs.Find(Builders<Job>.Filter.And(
+    public Task<IReadOnlyList<Job>> FindUnpublishedTerminalAsync(int limit, CancellationToken cancellationToken) =>
+        MongoGuard.RunAsync<IReadOnlyList<Job>>(async () => await _jobs.Find(Builders<Job>.Filter.And(
                 Builders<Job>.Filter.Eq(job => job.AuditPublished, false),
                 Builders<Job>.Filter.In(job => job.Status, new[] { JobStatus.Completed, JobStatus.Failed, JobStatus.Cancelled })))
             .SortBy(job => job.UpdatedAt)
             .Limit(limit)
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken));
 
     public Task EnsureIndexesAsync(CancellationToken cancellationToken) =>
         _jobs.Indexes.CreateManyAsync(
