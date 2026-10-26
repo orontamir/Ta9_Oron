@@ -1,0 +1,389 @@
+# Installation Guide — TA9 Document Processing System
+
+| | |
+|---|---|
+| **System** | Job Service (:5001) · Processor Service (:5002) · Audit Service (:5003) · MongoDB (:27017) |
+| **Stack** | .NET 8 · ASP.NET Core · MongoDB 7 · Docker / Docker Compose |
+| **Repository** | https://github.com/orontamir/Ta9_Oron |
+| **Related documents** | `README.md` (overview) · `docs/hld/TA9-HLD.docx` (High-Level Design) |
+
+## 1. Overview
+
+The system consists of three ASP.NET Core services and a MongoDB database:
+
+| Component | Port | Purpose | Swagger |
+|---|---|---|---|
+| Job Service | 5001 | Public API `/api/jobs`, SSE stream, WebSocket endpoint for the processor | http://localhost:5001/swagger |
+| Processor Service | 5002 | Internal API `/api/process`, document analysis | http://localhost:5002/swagger |
+| Audit Service | 5003 | `/api/audit`, summaries of finished jobs | http://localhost:5003/swagger |
+| MongoDB | 27017 | Storage for jobs, documents and audit entries | — |
+
+There are three ways to run it:
+
+| Option | When to use | Section |
+|---|---|---|
+| **Docker Desktop** (recommended) | Demo, review, closest to production | §4 |
+| **Docker Desktop, prebuilt** | Networks with a TLS-inspecting proxy, where builds inside Docker cannot reach nuget.org | §4.6 |
+| **Local .NET** | Development and debugging | §3 |
+
+## 2. Prerequisites
+
+### 2.1 Hardware and operating system
+
+| Item | Minimum |
+|---|---|
+| Operating system | Windows 10/11 (64-bit), macOS 12+, or Linux (x64/arm64) |
+| CPU / RAM | 2 cores / 8 GB RAM (Docker Desktop should get at least 4 GB) |
+| Disk | ~5 GB free (SDK, Docker images, MongoDB data) |
+| Free ports | 5001, 5002, 5003, 27017 |
+
+### 2.2 Software
+
+| Software | Version | Required for | Download |
+|---|---|---|---|
+| **Git** | 2.40+ | Cloning the repository | https://git-scm.com/downloads |
+| **Docker Desktop** | 4.x (Docker Engine 24+, Compose v2) | Running the stack; integration tests (Testcontainers) | https://www.docker.com/products/docker-desktop |
+| **.NET 8 SDK** | 8.0.x | Local run, tests, prebuilt Docker path | https://dotnet.microsoft.com/download/dotnet/8.0 |
+| PowerShell | 5.1+ (Windows) or 7+ | Helper scripts in `scripts/` | built in / https://aka.ms/powershell |
+| Postman *(optional)* | any | The ready-made collection in `docs/postman` | https://www.postman.com/downloads |
+| curl, jq *(optional)* | any | `scripts/smoke-test.sh`, SSE test | built in / package manager |
+
+On **Windows**, Docker Desktop needs the **WSL 2** backend (Docker Desktop → Settings → General → *Use the WSL 2 based engine*). WSL 2 is installed automatically or with `wsl --install`.
+
+Quick install on Windows with winget:
+
+```powershell
+winget install Git.Git
+winget install Docker.DockerDesktop        # restart Windows when asked
+winget install Microsoft.DotNet.SDK.8
+```
+
+### 2.3 Network access
+
+The standard Docker build downloads from `mcr.microsoft.com` (base images), Docker Hub (`mongo:7.0`) and `api.nuget.org` (NuGet packages). Behind a corporate proxy that inspects TLS, use the prebuilt path (§4.6).
+
+### 2.4 Verify the prerequisites
+
+```powershell
+git --version              # git version 2.x
+docker version             # Client and Server sections both shown (Docker Desktop running)
+docker compose version     # Docker Compose version v2.x
+dotnet --list-sdks         # 8.0.xxx
+```
+
+### 2.5 Get the source code
+
+```powershell
+git clone https://github.com/orontamir/Ta9_Oron.git
+cd Ta9_Oron
+```
+
+## 3. Deploy (local .NET)
+
+Runs the three services directly on the machine with `dotnet run`. This is useful for development and debugging. Each service listens on its port from `Properties/launchSettings.json` and runs in the `Development` environment, with readable console logs and Swagger opening in the browser.
+
+### 3.1 Build and test
+
+```powershell
+dotnet build Ta9.sln
+dotnet test Ta9.sln                                   # ~400 tests; Docker must be running (MongoDB tests)
+dotnet test Ta9.sln --filter "Category!=Integration"  # without Docker
+```
+
+### 3.2 Option A — with MongoDB (same storage as production)
+
+Start MongoDB in a container, then each service in its own terminal:
+
+```powershell
+docker run -d --name ta9-mongo -p 27017:27017 mongo:7.0
+
+dotnet run --project src/Ta9.JobService          # terminal 1 → http://localhost:5001
+dotnet run --project src/Ta9.ProcessorService    # terminal 2 → http://localhost:5002
+dotnet run --project src/Ta9.AuditService        # terminal 3 → http://localhost:5003
+```
+
+### 3.3 Option B — no database (in-memory storage)
+
+Job Service and Audit Service can keep everything in memory. Nothing is persisted across restarts.
+
+```powershell
+# PowerShell
+$env:Storage__Provider = "InMemory"; dotnet run --project src/Ta9.JobService
+$env:Storage__Provider = "InMemory"; dotnet run --project src/Ta9.AuditService
+dotnet run --project src/Ta9.ProcessorService
+```
+
+```bash
+# bash
+Storage__Provider=InMemory dotnet run --project src/Ta9.JobService
+Storage__Provider=InMemory dotnet run --project src/Ta9.AuditService
+dotnet run --project src/Ta9.ProcessorService
+```
+
+### 3.4 Verify
+
+```powershell
+curl.exe http://localhost:5001/health/ready     # Healthy
+curl.exe http://localhost:5002/health/ready     # Healthy (Degraded until the WebSocket to the Job Service is up)
+curl.exe http://localhost:5003/health/ready     # Healthy
+powershell -ExecutionPolicy Bypass -File .\scripts\smoke-test.ps1
+```
+
+### 3.5 Configuration reference
+
+All settings are in each service's `appsettings.json` and can be overridden with environment variables. Use `__` (double underscore) for nesting.
+
+| Service | Environment variable | Default | Meaning |
+|---|---|---|---|
+| Job | `Storage__Provider` | `Mongo` | `Mongo` or `InMemory` |
+| Job | `Storage__Mongo__ConnectionString` | `mongodb://localhost:27017` | MongoDB connection |
+| Job | `Storage__Mongo__Database` | `ta9_jobs` | Database name |
+| Job | `Processor__BaseUrl` | `http://localhost:5002/` | Processor REST endpoint |
+| Job | `Audit__BaseUrl` | `http://localhost:5003/` | Audit REST endpoint |
+| Job | `Dispatch__MaxDispatchAttempts` | `5` | Failed dispatch attempts before a job is Failed |
+| Job | `Reconcile__StaleAfter` | `00:01:00` | Silence before the reconciler checks a job |
+| Processor | `JobServiceEvents__Url` | `ws://localhost:5001/ws/processor-events` | Job Service WebSocket |
+| Processor | `Processing__MaxConcurrentJobs` | `10` | Jobs processed at the same time |
+| Processor | `Processing__QueueCapacity` | `100` | Waiting jobs before 503 |
+| Processor | `Processing__DocParallelismPerJob` | `2` | Documents analyzed in parallel per job |
+| Audit | `Storage__Provider` | `Mongo` | `Mongo` or `InMemory` |
+| Audit | `Storage__ConnectionString` | `mongodb://localhost:27017` | MongoDB connection |
+| All | `Logging__UseJsonConsole` | `true` (`false` in Development) | JSON or human-readable logs |
+
+## 4. Deploy to Docker Desktop
+
+`docker-compose.yml` builds the three service images and starts them together with MongoDB. It adds health checks and starts the containers in order: MongoDB → Job + Audit → Processor.
+
+![Deployment](../hld/images/deployment.png)
+
+### 4.1 Prepare Docker Desktop
+
+1. Start **Docker Desktop** and wait until it reports **Engine running**.
+2. *Settings → Resources:* give it at least **4 GB RAM** and **2 CPUs**.
+3. *(Windows)* *Settings → General:* **Use the WSL 2 based engine** is enabled.
+4. Make sure ports **5001–5003** and **27017** are free. Stop a local MongoDB if one is running.
+
+### 4.2 Build and start
+
+From the repository root:
+
+```powershell
+docker compose up --build -d
+```
+
+The first build downloads the .NET SDK and runtime images and the NuGet packages, which takes a few minutes. Later builds reuse the cached restore layer.
+
+### 4.3 Verify
+
+```powershell
+docker compose ps
+```
+
+All four containers must show **(healthy)**:
+
+```text
+NAME                      IMAGE                   STATUS                    PORTS
+ta9-audit-service-1       ta9/audit-service       Up 18 seconds (healthy)   0.0.0.0:5003->8080/tcp
+ta9-job-service-1         ta9/job-service         Up 17 seconds (healthy)   0.0.0.0:5001->8080/tcp
+ta9-mongo-1               mongo:7.0               Up 24 seconds (healthy)   0.0.0.0:27017->27017/tcp
+ta9-processor-service-1   ta9/processor-service   Up 12 seconds (healthy)   0.0.0.0:5002->8080/tcp
+```
+
+Then run the smoke test, which creates a job, waits for it to finish, and prints the results and the audit entry:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\smoke-test.ps1
+```
+
+Expected output (abridged):
+
+```text
+Created 1 job(s) with 3 document(s) each
+01dba5dd-…  Completed  3 docs  succeeded=3 failed=0 words=54
+All jobs finished in 1.1s
+  [0] doc-0.txt: words=18 unique=13 top=[the(3), 0(2), fox(2), quick(2), brown(1)] sha256=94b29bd5d7ae...
+Audit: Completed, recorded at 2026-10-26T14:57:53.94+00:00
+```
+
+The assignment's load scenario, 10 concurrent jobs × 1,000 documents:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\smoke-test.ps1 -Jobs 10 -Documents 1000
+```
+
+Other ways to try the API:
+- **Swagger UI:** http://localhost:5001/swagger
+- **Postman:** import `docs/postman/Ta9.postman_collection.json` and run the requests in order. "Create job" stores `{{jobId}}` for the rest.
+- **Live status stream (SSE):** `curl.exe -N http://localhost:5001/api/jobs/<job-id>/events`
+
+### 4.4 Operate
+
+| Task | Command |
+|---|---|
+| Follow logs of one service | `docker compose logs -f job-service` |
+| Follow all logs | `docker compose logs -f` |
+| Restart a service (e.g. to see the WebSocket reconnect) | `docker compose restart job-service` |
+| Rebuild after a code change | `docker compose up --build -d` |
+| Change a setting | edit `environment:` in `docker-compose.yml`, then `docker compose up -d` |
+| Stop (keep data) | `docker compose down` |
+| Stop and delete MongoDB data | `docker compose down -v` |
+| Inspect MongoDB | `docker compose exec mongo mongosh ta9_jobs --eval "db.jobs.find().limit(5)"` |
+
+The containers also appear in the Docker Desktop dashboard under **Containers → ta9**, where logs, health and resource usage are visible.
+
+### 4.5 Resilience demo (optional)
+
+```powershell
+docker compose restart job-service
+docker compose logs -f processor-service
+```
+
+While the Job Service restarts, the processor logs `Job Service events connection failed (attempt N)`, reconnects with exponential backoff, and replays every event that was not acknowledged. No job is lost.
+
+### 4.6 Restricted networks — prebuilt images
+
+If the build fails with `NU1301` (see §5.1), publish the services on the host, where restore works, and let Docker only package the binaries:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\docker-up-prebuilt.ps1
+```
+
+The script is equivalent to:
+
+```powershell
+foreach ($p in "Ta9.JobService","Ta9.ProcessorService","Ta9.AuditService") {
+    dotnet publish "src/$p/$p.csproj" -c Release -o "artifacts/$p" /p:UseAppHost=false
+}
+docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build -d
+```
+
+It uses `Dockerfile.prebuilt`. The compose file, health checks and configuration are identical to the standard path. Verify as in §4.3.
+
+## 5. Error Messages Encountered & Fixes
+
+The errors below were encountered while building and deploying this system, with their root cause and the fix applied.
+
+### 5.1 Docker build fails: NU1301 Unable to load the service index
+
+**Symptom:** `docker compose up --build` stops at the restore step:
+
+```text
+error NU1301: Unable to load the service index for source https://api.nuget.org/v3/index.json.
+[/src/src/Ta9.AuditService/Ta9.AuditService.csproj]
+target audit-service: failed to solve: process "/bin/sh -c dotnet restore src/${PROJECT}/${PROJECT}.csproj"
+did not complete successfully: exit code: 1
+```
+
+**Diagnosis:** HTTPS from inside a container fails, while the same restore works on the host:
+
+```powershell
+docker run --rm mcr.microsoft.com/dotnet/sdk:8.0 curl -sSI https://api.nuget.org/v3/index.json
+```
+
+```text
+curl: (60) SSL certificate problem: self-signed certificate in certificate chain
+```
+
+**Cause:** A corporate proxy performs **TLS inspection** and re-signs HTTPS traffic with an internal certificate. The host trusts that certificate; the container does not. (Plain HTTP, e.g. the `apt-get` step, still works.)
+
+**Fix:** Use the prebuilt path (§4.6). Do **not** bake a corporate CA certificate into the repository or the images. If your IT department allows it, an alternative is to add the corporate root CA to Docker Desktop and the build, but that is environment-specific and not part of this repository.
+
+### 5.2 PowerShell: script is not digitally signed
+
+**Symptom:**
+
+```text
+.\scripts\docker-up-prebuilt.ps1 : File \\server\share\TA9\scripts\docker-up-prebuilt.ps1 cannot be loaded.
+The file ... is not digitally signed. You cannot run this script on the current system.
+    + CategoryInfo          : SecurityError: (:) [], PSSecurityException
+    + FullyQualifiedErrorId : UnauthorizedAccess
+```
+
+**Cause:** The PowerShell execution policy treats scripts on a network share, or downloaded from the internet, as remote and requires a signature.
+
+**Fix** (affects only this one run):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\docker-up-prebuilt.ps1
+```
+
+For a repository downloaded as a ZIP, `Get-ChildItem -Recurse .\scripts | Unblock-File` also works. If a group policy blocks `Bypass`, run the commands listed in §4.6 manually.
+
+### 5.3 git push: 403, permission denied to another account
+
+**Symptom:**
+
+```text
+remote: Permission to orontamir/Ta9_Oron.git denied to <other-account>.
+fatal: unable to access 'https://github.com/orontamir/Ta9_Oron.git/': The requested URL returned error: 403
+```
+
+**Cause:** Git Credential Manager (or a `GIT_ASKPASS` helper) supplies cached credentials of a different GitHub account, e.g. a work account, for every `github.com` URL.
+
+**Fix:** Put the intended user name in the remote URL so the credential manager asks for that account. Sign in with a browser session or a Personal Access Token (*Contents: Read and write*) of that account:
+
+```powershell
+git remote set-url origin https://orontamir@github.com/orontamir/Ta9_Oron.git
+git push -u origin main
+```
+
+Do not delete the other account's stored credential, because other repositories still need it.
+
+### 5.4 git push: GH007, push would publish a private email address
+
+**Symptom:**
+
+```text
+remote: error: GH007: Your push would publish a private email address.
+ ! [remote rejected] main -> main (push declined due to email privacy restrictions)
+```
+
+**Cause:** The commits are authored with an email that GitHub keeps private (*Settings → Emails → Block command line pushes that expose my email*).
+
+**Fix:** Author the commits with the GitHub **noreply** address from *Settings → Emails* and rewrite the unpushed commits:
+
+```powershell
+git config user.email "<id>+<user>@users.noreply.github.com"
+git rebase --root --exec "git commit --amend --no-edit --reset-author"
+git push -u origin main
+```
+
+Environment variables such as `GIT_AUTHOR_EMAIL` override `git config`. If they are set, as in some managed workstations, set them for the commit as well.
+
+### 5.5 git commit hangs on a network share
+
+**Symptom:** `git commit` never finishes. The process waits on I/O while reading `.git/objects/pack/*.pack`.
+
+**Cause:** The working copy sits on a network share accessed by two machines at once (NFS and SMB), and another git client, such as an IDE's git integration, holds files in `.git` open.
+
+**Fix:** Close IDEs and git tools on the other machine while committing; the commit then completes. Better still, clone the repository to a local disk.
+
+### 5.6 Issues caught by the automated tests during development (already fixed in the code)
+
+| Failing tests / symptom | Cause | Fix |
+|---|---|---|
+| 11 MongoDB tests failed: queries by id or jobId returned nothing, while unfiltered reads worked | MongoDB.Driver 2.x legacy GUID mode encoded stored values and query values differently | GUIDs stored as strings with explicit per-member serializers (decision D22) |
+| `404` returned `application/json` instead of `application/problem+json` | `[Produces("application/json")]` on the controller overrode ProblemDetails responses | Attribute removed (RFC 7807 compliance) |
+| Empty document content (`""`) rejected with 400; whole jobs would have failed in the processor | MVC adds an implicit `[Required]` to non-nullable strings | Implicit rule disabled; validators are the single source of input rules (D23) |
+| Runner tests saw unexpected `JobProgress` events | Small jobs legitimately report progress per document | Lifecycle assertions ignore progress; progress is tested separately |
+| Smoke test printed `Created  job(s)` (count missing) | Windows PowerShell 5.1 has no `.Count` on a single object | Result wrapped in `@()` |
+
+### 5.7 Other messages you may see
+
+| Message | Meaning / fix |
+|---|---|
+| `Job Service events connection failed (attempt N)` in processor logs | **Expected** while the Job Service is starting or restarting; the processor reconnects automatically. Persistent: check `JobServiceEvents__Url` |
+| `/health/ready` of the processor returns `Degraded` | The WebSocket link is down; work is still accepted and events are buffered. Resolves when the Job Service is reachable |
+| API returns `503 Storage unavailable` | MongoDB is unreachable: `docker compose ps mongo`, `docker compose logs mongo` |
+| `Bind for 0.0.0.0:5001 failed: port is already allocated` | Another process uses the port: stop it, or change the host port in `docker-compose.yml` (e.g. `"5101:8080"`) |
+| `error during connect … docker_engine` / `Cannot connect to the Docker daemon` | Docker Desktop is not running: start it and wait for *Engine running* |
+| Integration tests fail with `Docker is either not running or misconfigured` | Testcontainers needs Docker Desktop running, or run `dotnet test --filter "Category!=Integration"` |
+| `fatal: detected dubious ownership in repository` | Repository on a network share: `git config --global --add safe.directory '<path>'` |
+
+## 6. Uninstall
+
+```powershell
+docker compose down -v                      # remove containers, network and MongoDB volume
+docker image rm ta9/job-service ta9/processor-service ta9/audit-service
+docker rm -f ta9-mongo                      # only if started manually in §3.2
+```

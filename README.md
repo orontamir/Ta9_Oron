@@ -10,7 +10,8 @@ Three .NET 8 services that process documents asynchronously and talk over **REST
 
 For each document the processor computes the word count, unique word count, top-5 words, SHA-256, character count, line count, average word length and longest word.
 
-> **High-Level Design** with Architecture, Class, Flow, State and Sequence diagrams: [`docs/hld/HLD.md`](docs/hld/HLD.md) (editable draw.io source: [`docs/hld/diagrams/ta9-hld.drawio`](docs/hld/diagrams/ta9-hld.drawio)).
+> **Installation Guide** (prerequisites, local and Docker Desktop deployment, errors encountered and fixes): [`docs/installation/INSTALLATION.md`](docs/installation/INSTALLATION.md) · Word: [`TA9-Installation-Guide.docx`](docs/installation/TA9-Installation-Guide.docx).
+> **High-Level Design** with Architecture, Class, Flow, State and Sequence diagrams: [`docs/hld/HLD.md`](docs/hld/HLD.md) (editable draw.io source: [`docs/hld/diagrams/ta9-hld.drawio`](docs/hld/diagrams/ta9-hld.drawio)) · Word: [`docs/hld/TA9-HLD.docx`](docs/hld/TA9-HLD.docx).
 > Detailed design documents, the full decision log and the failure catalogue are in [`docs/design`](docs/design).
 
 ---
