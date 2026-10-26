@@ -15,6 +15,8 @@ public class Program
         builder.Services.AddJobStorage(builder.Configuration);
         builder.Services.AddProcessorIntegration(builder.Configuration);
         builder.Services.AddSingleton<JobManager>();
+        builder.Services.AddSingleton<ProcessorEventHandler>();
+        builder.Services.AddSingleton<ProcessorEventsEndpoint>();
         builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 
         builder.Services
@@ -27,6 +29,8 @@ public class Program
         var app = builder.Build();
 
         app.UseServiceDefaults();
+        app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(15) });
+        app.Map(ProcessorEventsEndpoint.Path, (RequestDelegate)app.Services.GetRequiredService<ProcessorEventsEndpoint>().HandleAsync);
         app.UseSwagger();
         app.UseSwaggerUI();
         app.MapControllers();

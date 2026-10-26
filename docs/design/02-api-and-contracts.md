@@ -127,6 +127,8 @@ The Job Service acks **after** it has handled the event, whether it persisted it
 3. `JobProgress`: `processedDocuments = max(current, incoming)`, so out-of-order progress is harmless. It also implies `Queued → Processing`.
 4. `JobCompleted`: bulk-upsert results keyed by `(jobId, index)`, then transition. This is idempotent, so a replay is a no-op.
 5. Unknown `type` or a newer `schemaVersion`: log, ack, ignore (forward compatible).
+6. Any event for a job still `Pending`: first move it to `Queued`, because an event proves the Processor accepted it. This covers a small job that finishes before the dispatcher has recorded the 202.
+7. Unparsable message: no ack (there is no eventId to ack). Storage failure while handling: **no ack**, so the Processor resends after its ack timeout. Malformed payload with a valid envelope: ack and ignore, since a retry would fail the same way.
 
 ## 4. Audit Service (`:5003`, bonus)
 
