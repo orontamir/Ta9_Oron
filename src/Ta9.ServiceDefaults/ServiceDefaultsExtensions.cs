@@ -78,11 +78,17 @@ public static class ServiceDefaultsExtensions
 
     public static WebApplication UseServiceDefaults(this WebApplication app)
     {
+        // Correlation first: error handling and request logging then run inside the correlation scope,
+        // so error lines (unhandled exceptions, 503 mapping) carry the request's correlation id too.
+        app.UseMiddleware<CorrelationIdMiddleware>();
         app.UseExceptionHandler();
         app.UseStatusCodePages();
-        app.UseMiddleware<CorrelationIdMiddleware>();
         app.UseSerilogRequestLogging(options =>
         {
+            // The middleware defaults to the static Log.Logger, which this host never configures
+            // (preserveStaticLogger): use the host's own logger so request lines reach the console and MongoDB.
+            options.Logger = app.Services.GetService<ILogger>();
+
             // Health probes run every few seconds; keep them out of the default log level.
             options.GetLevel = (httpContext, _, exception) =>
                 exception is not null || httpContext.Response.StatusCode >= 500

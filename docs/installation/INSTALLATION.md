@@ -482,6 +482,8 @@ Environment variables such as `GIT_AUTHOR_EMAIL` override `git config`. If they 
 | Empty document content (`""`) rejected with 400; whole jobs would have failed in the processor | MVC adds an implicit `[Required]` to non-nullable strings | Implicit rule disabled; validators are the single source of input rules (D23) |
 | Runner tests saw unexpected `JobProgress` events | Small jobs legitimately report progress per document | Lifecycle assertions ignore progress; progress is tested separately |
 | Smoke test printed `Created  job(s)` (count missing) | Windows PowerShell 5.1 has no `.Count` on a single object | Result wrapped in `@()` |
+| No `HTTP … responded …` request lines in the logs | Serilog's request logging used the static `Log.Logger`, which the services never configure | The middleware now uses the service's own logger |
+| Error lines of failed requests had no correlation id | Exception handling ran before the correlation middleware | Correlation middleware runs first |
 
 ### 6.7 Other messages you may see
 

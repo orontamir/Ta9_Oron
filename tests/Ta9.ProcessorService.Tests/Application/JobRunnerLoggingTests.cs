@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Ta9.ProcessorService.Application;
+using Ta9.ProcessorService.Domain;
 using Ta9.ProcessorService.Tests.TestSupport;
 using Ta9.Tests.Shared;
 
