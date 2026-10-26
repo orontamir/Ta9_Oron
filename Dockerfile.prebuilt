@@ -1,0 +1,23 @@
+# Packaging-only image for restricted networks (corporate proxy / TLS inspection) where `dotnet restore`
+# cannot reach nuget.org from inside a container. The services are published on the host first:
+#   ./scripts/docker-up-prebuilt.ps1
+# Otherwise prefer the regular multi-stage Dockerfile.
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
+ARG PROJECT
+
+# curl is only used by the container health check (/health/ready).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY artifacts/${PROJECT}/ .
+
+ENV APP_DLL=${PROJECT}.dll \
+    ASPNETCORE_HTTP_PORTS=8080
+EXPOSE 8080
+
+USER $APP_UID
+
+ENTRYPOINT ["/bin/sh", "-c", "exec dotnet \"$APP_DLL\""]

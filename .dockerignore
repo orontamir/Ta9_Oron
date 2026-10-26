@@ -1,5 +1,6 @@
 **/bin/
 **/obj/
+# artifacts/ is NOT ignored: Dockerfile.prebuilt copies host-published binaries from it
 **/TestResults/
 .git/
 .vs/

@@ -1,0 +1,14 @@
+# Override for restricted networks: package host-published binaries instead of building inside Docker.
+#   ./scripts/docker-up-prebuilt.ps1
+# (= dotnet publish to ./artifacts, then: docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build)
+
+services:
+  job-service:
+    build:
+      dockerfile: Dockerfile.prebuilt
+  processor-service:
+    build:
+      dockerfile: Dockerfile.prebuilt
+  audit-service:
+    build:
+      dockerfile: Dockerfile.prebuilt

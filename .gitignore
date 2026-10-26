@@ -14,3 +14,4 @@ nuget.config
 # Local artifacts / editor tooling
 *.bundle
 .github/copilot-instructions.md
+artifacts/
