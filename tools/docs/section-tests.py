@@ -243,4 +243,67 @@ Contract suites against MongoDB need Docker (`Category=Integration`, Testcontain
 """
 replace_section(ROOT / "docs/storage/STORAGE.md", "## 7. Tests for this section", None, storage)
 
-print("concurrency + websocket + storage test chapters written")
+# ------------------------------------------------------------------ §7 Logging & Observability
+LOGGING = [
+    ("BatchingLogSinkTests", u("Writes events in order in batches no larger than the batch size", "Flushes a partial batch after the flush interval",
+                               "Dispose writes pending events before returning", "Full buffer drops events without blocking and reports the count",
+                               "Failed write is reported and later events still reach the store", "Emit after dispose is counted as dropped and does not throw")),
+    ("LogRecordTests", u("Maps level rendered message service host and exception", "Renders string values without quotes and other values as serilog does",
+                         "Promotes correlation and job ids and keeps other properties as text", "Truncates oversized message and exception",
+                         "Bson document has indexed fields and safe property names")),
+    ("ServiceLoggingPipelineTests", u("Debug information and error are stored with service and correlation id", "Mongo minimum level filters what is stored",
+                                      "Unhandled endpoint exception is stored as an error with the stack trace", "Startup logs where logs go and that the service started",
+                                      "Disabled mongo logging stores nothing", "Stopping the host flushes buffered records")),
+    ("MongoLogBatchWriterTests", u("Stores records that can be queried by job id", "Creates the retention ttl index and the lookup indexes",
+                                   "Changing the retention updates the existing ttl index", "Unreachable database fails fast")),
+    ("JobDispatcherLoggingTests", u("Accepted dispatch logs the flow at information and details at debug", "Unreachable processor logs warnings then an error when giving up",
+                                    "Rejected payload is logged as an error", "Unexpected failure is logged as an error with the exception")),
+    ("JobRunnerLoggingTests", u("Successful job logs start and completion with the job id", "Failing document is a warning with the exception and the job still completes",
+                                "Job where every document fails is logged as an error")),
+    ("JobsApiLoggingTests", u("Creating a job stores info and debug records with job id and correlation id", "Invalid request is logged without error level")),
+    ("JobsApiStorageFailureTests", u("Storage outage is logged as an error with the correlation id")),
+    ("AuditApiLoggingTests", u("Recording logs information and a duplicate logs debug")),
+    ("CorrelationIdMiddlewareTests", u("Generates id when header missing and echoes it", "Reuses valid incoming id", "Replaces invalid incoming id")),
+    ("CorrelationIdHandlerTests", u("Adds header from ambient scope", "Does not add header without scope", "Keeps explicit header")),
+    ("CorrelationTests", u("IsValid accepts safe ids", "IsValid rejects unsafe ids", "IsValid rejects ids longer than 64 chars",
+                           "BeginScope sets and restores current id", "Current id flows across awaits")),
+    ("JobsApiTests", u("Readiness reports storage health")),
+    ("AuditApiTests", u("Readiness reports storage")),
+    ("ProcessApiTests", u("Liveness endpoint is healthy")),
+    ("EndToEndTests", u("Job flow is logged to mongodb by all three services under one correlation id")),
+]
+logging_md = f"""## 5. Tests for this section
+
+{INTRO.format(what='§7 Logging & Observability')}
+
+### 5.1 What is verified
+
+| Claim in this document | Verified by |
+|---|---|
+| Logging never blocks the caller; a full buffer drops and counts; losses are reported in the stored logs | `BatchingLogSinkTests` |
+| Batches by size and time; everything pending is written on shutdown; a failed write is isolated and reported on stderr | `BatchingLogSinkTests`, `ServiceLoggingPipelineTests` |
+| Stored record shape: level, plain message, service, host, `jobId` / `correlationId` promoted, sizes capped, safe BSON | `LogRecordTests` |
+| Real pipeline: Debug + Information + Error stored with service and correlation id; Mongo level filter; disable switch; startup lines; unhandled errors with stack trace | `ServiceLoggingPipelineTests` |
+| MongoDB: queryable by job id, 7-day TTL index, lookup indexes, retention change, 3 s fail-fast | `MongoLogBatchWriterTests` (Docker) |
+| The right level for each event: flow = Information, detail = Debug, handled problem = Warning, failure = Error; job id on every line | `JobDispatcherLoggingTests`, `JobRunnerLoggingTests` |
+| What an API call leaves in the store; client errors are not Errors; storage outage is an Error | `JobsApiLoggingTests`, `JobsApiStorageFailureTests`, `AuditApiLoggingTests` |
+| Correlation id is generated, validated, propagated over HTTP and kept across awaits | `CorrelationIdMiddlewareTests`, `CorrelationIdHandlerTests`, `CorrelationTests` |
+| Health endpoints | `JobsApiTests`, `AuditApiTests`, `ProcessApiTests` |
+| **End to end: all three services log one job to MongoDB under one correlation id** | **E2E test below** and manual **MT-11** |
+
+### 5.2 Automated tests
+
+{table(catalog, LOGGING)}
+
+Tests marked as requiring Docker run with `Category=Integration` (Testcontainers). The logging tests were added after the latest full run (407 / 407); re-run pending.
+
+### 5.3 Manual tests
+
+| STD ID | Procedure | Expected result | Status |
+|---|---|---|---|
+| MT-11 | After the smoke test (MT-02): `docker compose logs --tail 50 job-service processor-service`; then `docker compose exec mongo mongosh ta9_logs --eval "db.logs.find({{jobId:'<id>'}}).sort({{timestamp:1}})"` | Console shows the flow (Information); MongoDB holds Debug + Information of all three services for the job under one `correlationId`; index `ttl_timestamp` exists | Not yet executed |
+| MT-09 | `docker compose stop mongo` while the stack runs; watch `docker compose logs job-service`; start it again | `Request failed: Storage unavailable` (Error) and `[ta9-log-sink] … could not store` on the console; after restart a stored Warning `N log events were not stored` | Not yet executed |
+"""
+replace_section(ROOT / "docs/logging/LOGGING.md", "## 5. Tests for this section", None, logging_md)
+
+print("concurrency + websocket + storage + logging test chapters written")

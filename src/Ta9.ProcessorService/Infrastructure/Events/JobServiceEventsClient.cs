@@ -93,7 +93,10 @@ public sealed class JobServiceEventsClient(
             foreach (var envelope in outbox.TakeDue(settings.AckTimeout))
             {
                 await socket.SendAsync(ProcessorEventSerializer.Serialize(envelope).AsMemory(), WebSocketMessageType.Text, endOfMessage: true, cancellationToken);
-                logger.LogDebug("Sent {Type} {EventId} for job {JobId}", envelope.Type, envelope.EventId, envelope.JobId);
+                using (Correlation.IsValid(envelope.CorrelationId) ? Correlation.BeginScope(envelope.CorrelationId!) : null)
+                {
+                    logger.LogDebug("Sent {Type} {EventId} for job {JobId}", envelope.Type, envelope.EventId, envelope.JobId);
+                }
             }
 
             try
@@ -140,6 +143,7 @@ public sealed class JobServiceEventsClient(
             }
 
             outbox.Acknowledge(ack.EventId);
+            logger.LogDebug("Job Service acknowledged event {EventId}", ack.EventId);
         }
     }
 

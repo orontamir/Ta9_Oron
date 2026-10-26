@@ -32,6 +32,7 @@ public sealed class ProcessorEventHandler(
         using var correlation = Correlation.BeginScope(
             Correlation.IsValid(envelope.CorrelationId) ? envelope.CorrelationId! : Correlation.NewId());
         using var logScope = logger.BeginScope(new Dictionary<string, object> { ["JobId"] = envelope.JobId });
+        logger.LogDebug("Received {Type} {EventId} for job {JobId} (schema {Version})", envelope.Type, envelope.EventId, envelope.JobId, envelope.SchemaVersion);
 
         if (envelope.SchemaVersion > ProcessorEventSerializer.CurrentSchemaVersion)
         {

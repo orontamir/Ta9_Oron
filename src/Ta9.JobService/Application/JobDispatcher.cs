@@ -95,6 +95,11 @@ public sealed class JobDispatcher(
 
             if (batch.Count == 0)
             {
+                if (handled > 0)
+                {
+                    logger.LogDebug("Dispatch pass handled {Count} jobs", handled);
+                }
+
                 return handled;
             }
 
@@ -109,11 +114,14 @@ public sealed class JobDispatcher(
         using var logScope = logger.BeginScope(new Dictionary<string, object> { ["JobId"] = job.Id });
         try
         {
+            logger.LogDebug("Claimed job {JobId} for dispatch (previous attempts {Attempts}, lease until {LeaseUntil})",
+                job.Id, job.DispatchAttempts, job.LeaseUntil);
             var payload = (await documents.GetByJobAsync(job.Id, cancellationToken))
                 .Select(d => new ProcessDocumentRequest(d.Index, d.Name, d.Content))
                 .ToList();
 
             var result = await processor.SubmitAsync(job.Id, payload, cancellationToken);
+            logger.LogDebug("Processor answered {Outcome} for job {JobId} ({DocumentCount} documents)", result.Outcome, job.Id, payload.Count);
             await ApplyAsync(job.Id, result, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

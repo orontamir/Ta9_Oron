@@ -13,8 +13,9 @@ For each document the processor computes the word count, unique word count, top-
 > **WebSocket disconnect/reconnect behavior** (outbox, acks, backoff, idempotency, reconciler, tests): [`docs/websocket/WEBSOCKET.md`](docs/websocket/WEBSOCKET.md) · Word: [`TA9-WebSocket-Behavior.docx`](docs/websocket/TA9-WebSocket-Behavior.docx).
 > **Concurrency & Performance** (chosen strategy, advantages, limitations, diagrams): [`docs/concurrency/CONCURRENCY.md`](docs/concurrency/CONCURRENCY.md) · Word: [`TA9-Concurrency-Performance.docx`](docs/concurrency/TA9-Concurrency-Performance.docx).
 > **Storage** (interfaces, InMemory + MongoDB, data model, outage handling, how to replace it, tests): [`docs/storage/STORAGE.md`](docs/storage/STORAGE.md) · Word: [`TA9-Storage.docx`](docs/storage/TA9-Storage.docx).
-> **Software Test Description (STD)**: test strategy, environment, traceability to the requirements, all 404 automated test cases, manual procedures and defects: [`docs/testing/STD.md`](docs/testing/STD.md) · Word: [`TA9-STD.docx`](docs/testing/TA9-STD.docx).
-> **Installation Guide** (prerequisites, local and Docker Desktop deployment, errors encountered and fixes): [`docs/installation/INSTALLATION.md`](docs/installation/INSTALLATION.md) · Word: [`TA9-Installation-Guide.docx`](docs/installation/TA9-Installation-Guide.docx).
+> **Logging & Observability** (console + MongoDB, levels, correlation, tests): [`docs/logging/LOGGING.md`](docs/logging/LOGGING.md) · Word: [`TA9-Logging-Observability.docx`](docs/logging/TA9-Logging-Observability.docx). **Something does not start, hangs or crashes?** See the Installation Guide §5 *Troubleshooting — where to look*.
+> **Software Test Description (STD)**: test strategy, environment, traceability to the requirements, all 311 automated test cases (440 executions), manual procedures and defects: [`docs/testing/STD.md`](docs/testing/STD.md) · Word: [`TA9-STD.docx`](docs/testing/TA9-STD.docx).
+> **Installation Guide** (prerequisites, local and Docker Desktop deployment, troubleshooting, errors encountered and fixes): [`docs/installation/INSTALLATION.md`](docs/installation/INSTALLATION.md) · Word: [`TA9-Installation-Guide.docx`](docs/installation/TA9-Installation-Guide.docx).
 > **High-Level Design** with Architecture, Class, Flow, State and Sequence diagrams: [`docs/hld/HLD.md`](docs/hld/HLD.md) (editable draw.io source: [`docs/hld/diagrams/ta9-hld.drawio`](docs/hld/diagrams/ta9-hld.drawio)) · Word: [`docs/hld/TA9-HLD.docx`](docs/hld/TA9-HLD.docx).
 > Detailed design documents, the full decision log and the failure catalogue are in [`docs/design`](docs/design).
 
@@ -36,7 +37,7 @@ docker compose ps            # wait until all four containers are "healthy"
 
 ### Locally with the .NET 8 SDK
 ```bash
-docker run -d -p 27017:27017 mongo:7.0                    # or set Storage__Provider=InMemory (Job + Audit)
+docker run -d -p 27017:27017 mongo:7.0                    # or Storage__Provider=InMemory (Job + Audit) and Logging__Mongo__Enabled=false
 dotnet run --project src/Ta9.JobService                   # http://localhost:5001
 dotnet run --project src/Ta9.ProcessorService             # http://localhost:5002
 dotnet run --project src/Ta9.AuditService                 # http://localhost:5003
@@ -45,13 +46,13 @@ All settings live in each service's `appsettings.json` and can be overridden wit
 
 ## 2. Tests
 ```bash
-dotnet test Ta9.sln                                   # everything (~400 tests); Docker must be running
+dotnet test Ta9.sln                                   # everything (~440 tests); Docker must be running
 dotnet test Ta9.sln --filter "Category!=Integration"  # without Docker: unit + in-memory API tests
 ```
 
 | Project | What it covers |
 |---|---|
-| `Ta9.ServiceDefaults.Tests` | Correlation id (validation, async flow, middleware, HttpClient propagation), backoff |
+| `Ta9.ServiceDefaults.Tests` | Correlation id (validation, async flow, middleware, HttpClient propagation), backoff; **logging pipeline**: batched MongoDB sink (non-blocking, drops counted, flush on stop), record mapping, levels and correlation through the real host, MongoDB writer with TTL (Testcontainers) |
 | `Ta9.ProcessorService.Tests` | Tokenizer and analyzer rules; state, throttling, runner, worker pool **concurrency bounds**; queue/backpressure; REST API; outbox semantics; **real WebSocket** client tests (replay, buffering, ack timeout) against a fake Job Service |
 | `Ta9.JobService.Tests` | Exhaustive state-transition table; aggregate rules; optimistic concurrency; one **repository contract suite run against both InMemory and real MongoDB** (Testcontainers); dispatcher, reconciler, event handler, audit publisher (manual clock); REST, WebSocket endpoint and SSE through the real pipeline |
 | `Ta9.AuditService.Tests` | API, validation, repository contract (InMemory + MongoDB) |
@@ -98,6 +99,7 @@ Full log with the alternatives considered: [`docs/design/04-decisions.md`](docs/
 | MongoDB: `jobs` + `job_documents` | Avoids the 16 MB document limit; status polling stays cheap | No multi-document transactions; write order makes this safe (D21) |
 | Storage behind interfaces; `Storage:Provider = Mongo \| InMemory` | Swapping storage is a configuration change | Two implementations to keep aligned (one shared contract test suite) |
 | SSE for clients, WebSocket between services | SSE is one-way, plain HTTP and auto-reconnects. The service link needs acks back | — |
+| Logs: console ≥ Information + **own batched MongoDB sink** ≥ Debug | The flow stays readable on the console, the detail needed after a failure is searchable in one place for all services. Logging never blocks or crashes a service | Records can be dropped when MongoDB is down or under an extreme burst (counted and reported; the console has everything) |
 | GUIDs stored as strings in Mongo | Driver 2.x legacy GUID mode broke equality filters (caught by the contract tests) | Slightly larger documents |
 
 ## 5. Concurrency and performance
@@ -138,8 +140,13 @@ Full catalogue: [`docs/design/03-reliability-and-concurrency.md`](docs/design/03
 | Audit Service down | Jobs unaffected; the `auditPublished` flag is an outbox, retried with backoff |
 
 ## 8. Observability
-- **Serilog** structured logs: JSON in containers, readable text in Development. Every line carries `Service`, `CorrelationId` and `JobId`.
-- **Correlation id** (`X-Correlation-Id`) flows client → Job Service → processor (HTTP header) → back in WS events → audit. One id lets you trace a job across all services.
+Full description: [`docs/logging/LOGGING.md`](docs/logging/LOGGING.md). Where to look when something fails: Installation Guide §5.
+
+- **Two destinations, one pipeline** (`Ta9.ServiceDefaults`, identical in all services):
+  - **Console** (`docker compose logs`): Information and up, JSON in containers. The live flow and every warning and error.
+  - **MongoDB `ta9_logs.logs`**: Debug and up, from all three services, kept 7 days (TTL index). Written by our own batched sink: a bounded buffer that never blocks, batches of 100 / 1 s, flushed on shutdown and on crash, losses counted and reported.
+- **Levels:** Debug = detail to investigate (claims, HTTP results, progress, acks) · Information = the job flow and one line per HTTP request · Warning = handled problems (retries, one failed document, reconnects) · Error = failed operations with the stack trace · Critical = unhandled exception.
+- **Correlation id** (`X-Correlation-Id`) is stored with the job and flows client → Job Service → processor (HTTP header) → back in WS events → audit. With `JobId` on every line, `db.logs.find({ jobId: "<id>" })` shows a job's whole path.
 - **Health:** `/health/live` and `/health/ready` (storage, processor WS link). Used by the docker-compose health checks.
 
 ## 9. Known limitations and what I would improve for production
@@ -147,7 +154,7 @@ Full catalogue: [`docs/design/03-reliability-and-concurrency.md`](docs/design/03
 - **Processor state is in memory:** queued work and its outbox are lost on restart. The reconciler recovers it, at the cost of up to about 60s of latency. A broker (RabbitMQ or Kafka) with durable queues would replace the REST dispatch, the WS events and the reconciler.
 - **No authentication/authorization** (out of scope). Production would use JWT for the public API and mTLS or a shared secret for the service-to-service WS and REST.
 - **No rate limiting or tenant quotas** on the public API.
-- **Metrics/tracing:** add OpenTelemetry (traces across the HTTP/WS hops; metrics for queue depth, dispatch latency, outbox size).
+- **Metrics/tracing:** add OpenTelemetry (traces across the HTTP/WS hops; metrics for queue depth, dispatch latency, outbox size). Logs share the MongoDB server with the data; production would ship the console JSON to a dedicated log platform.
 - Swagger is enabled in every environment for this POC.
 - A job deleted before its audit summary is published is never audited.
 - Very long processor outages: jobs stay `Queued`/`Processing` and are only rechecked. A maximum age before failing could be added.

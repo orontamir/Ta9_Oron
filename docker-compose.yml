@@ -11,6 +11,11 @@ x-service-defaults: &service-defaults
   environment: &common-environment
     ASPNETCORE_ENVIRONMENT: Production
     Logging__UseJsonConsole: "true"
+    # Logs: console (docker compose logs) from Information, MongoDB ta9_logs.logs from Debug (7-day TTL).
+    Logging__Console__MinimumLevel: Information
+    Logging__Mongo__Enabled: "true"
+    Logging__Mongo__ConnectionString: mongodb://mongo:27017
+    Logging__Mongo__MinimumLevel: Debug
 
 services:
   mongo:

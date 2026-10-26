@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using MongoDB.Bson;
+using MongoDB.Driver;
 using Ta9.JobService.Api;
 using Ta9.JobService.Domain;
 using Ta9.JobService.Infrastructure.Audit;
@@ -78,6 +80,7 @@ public sealed class Ta9System : IAsyncDisposable
         {
             builder.UseSetting("Storage:ConnectionString", _mongoConnectionString);
             builder.UseSetting("Storage:Database", $"e2e_audit_{_suffix}");
+            UseMongoLogging(builder);
         });
         AuditApi = Audit.CreateClient();
 
@@ -92,6 +95,7 @@ public sealed class Ta9System : IAsyncDisposable
             builder.UseSetting("Reconcile:Interval", "00:00:01");
             builder.UseSetting("Reconcile:StaleAfter", "00:00:02");
             builder.UseSetting("Audit:Interval", "00:00:00.500");
+            UseMongoLogging(builder);
             builder.ConfigureTestServices(services =>
             {
                 services.AddHttpClient(HttpProcessorClient.HttpClientName)
@@ -170,6 +174,24 @@ public sealed class Ta9System : IAsyncDisposable
         await Audit.DisposeAsync();
     }
 
+    /// <summary>The three services log to one database, as in docker-compose (ta9_logs.logs).</summary>
+    public string LogsDatabase => $"e2e_logs_{_suffix}";
+
+    /// <summary>Log records stored for a job by any service, oldest first.</summary>
+    public async Task<IReadOnlyList<BsonDocument>> GetJobLogsAsync(Guid jobId) =>
+        await new MongoClient(_mongoConnectionString).GetDatabase(LogsDatabase).GetCollection<BsonDocument>("logs")
+            .Find(Builders<BsonDocument>.Filter.Eq("jobId", jobId.ToString()))
+            .Sort(Builders<BsonDocument>.Sort.Ascending("timestamp"))
+            .ToListAsync();
+
+    private void UseMongoLogging(IWebHostBuilder builder)
+    {
+        builder.UseSetting("Logging:Mongo:Enabled", "true");
+        builder.UseSetting("Logging:Mongo:ConnectionString", _mongoConnectionString);
+        builder.UseSetting("Logging:Mongo:Database", LogsDatabase);
+        builder.UseSetting("Logging:Mongo:FlushInterval", "00:00:00.200");
+    }
+
     private HttpMessageHandler CurrentProcessorHandler() =>
         _processor is null ? new UnreachableHandler() : _processor.Server.CreateHandler();
 
@@ -179,6 +201,7 @@ public sealed class Ta9System : IAsyncDisposable
             builder.UseSetting("JobServiceEvents:ReconnectInitialDelay", "00:00:00.100");
             builder.UseSetting("JobServiceEvents:ReconnectMaxDelay", "00:00:01");
             builder.UseSetting("JobServiceEvents:AckTimeout", "00:00:05");
+            UseMongoLogging(builder);
             builder.ConfigureTestServices(services =>
             {
                 services.AddSingleton<IWebSocketConnector>(new JobServiceTestConnector(() => Jobs.Server));

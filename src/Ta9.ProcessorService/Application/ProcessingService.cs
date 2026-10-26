@@ -32,6 +32,7 @@ public sealed class ProcessingService(
         // Idempotency: the Job Service may retry a dispatch whose response it never received.
         if (store.TryGet(request.JobId, out var existing))
         {
+            logger.LogDebug("Job {JobId} is already known (status {Status}); duplicate submit ignored", request.JobId, existing.Status);
             return new SubmitResult(SubmitOutcome.AlreadyExists, existing);
         }
 
@@ -40,6 +41,7 @@ public sealed class ProcessingService(
         {
             // Lost a race with a concurrent submit of the same job id.
             store.TryGet(request.JobId, out existing);
+            logger.LogDebug("Job {JobId} was submitted concurrently; returning the existing entry", request.JobId);
             return new SubmitResult(SubmitOutcome.AlreadyExists, existing);
         }
 
@@ -62,6 +64,7 @@ public sealed class ProcessingService(
     {
         if (!store.TryGet(jobId, out var job))
         {
+            logger.LogDebug("Cancel requested for unknown job {JobId}", jobId);
             return (CancelOutcome.NotFound, null);
         }
 
@@ -73,6 +76,7 @@ public sealed class ProcessingService(
         }
 
         // Cancelling twice is not an error (idempotent); cancelling a finished job is.
+        logger.LogDebug("Cancel of job {JobId} ignored: already {Status}", jobId, job.Status);
         return job.Status == ProcessingStatus.Cancelled
             ? (CancelOutcome.Cancelled, job)
             : (CancelOutcome.AlreadyFinished, job);

@@ -111,5 +111,6 @@ public sealed class ProcessorEventsEndpoint(
         }
 
         await socket.SendAsync(ProcessorEventSerializer.SerializeAck(envelope.EventId).AsMemory(), WebSocketMessageType.Text, endOfMessage: true, cancellationToken);
+        logger.LogDebug("Acknowledged {Type} {EventId}", envelope.Type, envelope.EventId);
     }
 }

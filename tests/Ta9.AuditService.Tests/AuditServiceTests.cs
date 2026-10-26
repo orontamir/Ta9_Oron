@@ -8,6 +8,7 @@ using Ta9.AuditService.Application;
 using Ta9.AuditService.Domain;
 using Ta9.AuditService.Infrastructure;
 using Ta9.Contracts.Audit;
+using Ta9.Tests.Shared;
 using Testcontainers.MongoDb;
 
 namespace Ta9.AuditService.Tests;
@@ -24,8 +25,35 @@ internal static class AuditTestData
 
 public sealed class AuditApiFactory : WebApplicationFactory<Program>
 {
-    protected override void ConfigureWebHost(IWebHostBuilder builder) =>
+    public CapturingLogWriter Logs { get; } = new();
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
         builder.UseSetting("Storage:Provider", "InMemory");
+        Logs.AttachTo(builder);
+    }
+}
+
+/// <summary>The Audit Service's real logging pipeline: what recording a summary leaves in the log store.</summary>
+public sealed class AuditApiLoggingTests(AuditApiFactory factory) : IClassFixture<AuditApiFactory>
+{
+    private readonly HttpClient _client = factory.CreateClient();
+
+    [Fact]
+    public async Task Recording_logs_information_and_a_duplicate_logs_debug()
+    {
+        var request = AuditTestData.Request();
+
+        await _client.PostAsJsonAsync("/api/audit", request);
+        await _client.PostAsJsonAsync("/api/audit", request);
+
+        var recorded = (await factory.Logs.WaitForAsync(r => r.Message.StartsWith($"Recorded audit entry for job {request.JobId}"))).Single();
+        recorded.Level.Should().Be("Information");
+        recorded.Service.Should().Be("audit-service");
+        recorded.JobId.Should().Be(request.JobId.ToString());
+        (await factory.Logs.WaitForAsync(r => r.Message == $"Audit entry for job {request.JobId} already exists; keeping the first one"))
+            .Single().Level.Should().Be("Debug");
+    }
 }
 
 public sealed class AuditApiTests(AuditApiFactory factory) : IClassFixture<AuditApiFactory>

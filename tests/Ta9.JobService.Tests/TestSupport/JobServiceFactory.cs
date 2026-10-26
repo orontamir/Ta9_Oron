@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Ta9.JobService.Application;
 using Ta9.JobService.Domain;
+using Ta9.Tests.Shared;
 
 namespace Ta9.JobService.Tests.TestSupport;
 
@@ -15,12 +16,16 @@ public sealed class JobServiceFactory : WebApplicationFactory<Program>
 {
     public FakeProcessorClient Processor { get; } = new();
 
+    /// <summary>What the service would store in the log database (the real pipeline, minus MongoDB).</summary>
+    public CapturingLogWriter Logs { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("Storage:Provider", "InMemory");
         builder.UseSetting("Dispatch:Enabled", "false");
         builder.UseSetting("Reconcile:Enabled", "false");
         builder.UseSetting("Audit:Enabled", "false");
+        Logs.AttachTo(builder);
         builder.ConfigureTestServices(services => services.AddSingleton<IProcessorClient>(Processor));
     }
 

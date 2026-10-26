@@ -55,6 +55,7 @@ public sealed class JobManager(
         // Documents first, job second: the job record is the commit marker. A crash in between leaves
         // only unreferenced documents, never a job without its documents.
         await documents.InsertManyAsync(jobDocuments, cancellationToken);
+        logger.LogDebug("Stored {DocumentCount} documents of job {JobId}", jobDocuments.Count, job.Id);
         await jobs.InsertAsync(job, cancellationToken);
 
         logger.LogInformation("Job {JobId} created with {DocumentCount} documents", job.Id, job.TotalDocuments);

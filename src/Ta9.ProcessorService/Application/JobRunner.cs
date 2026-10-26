@@ -30,6 +30,7 @@ public sealed class JobRunner(
         }
 
         logger.LogInformation("Job started with {DocumentCount} documents", documents.Count);
+        logger.LogDebug("Analyzing with document parallelism {Parallelism}", options.Value.DocParallelismPerJob);
         events.JobStarted(job);
 
         var startTimestamp = time.GetTimestamp();
@@ -47,8 +48,10 @@ public sealed class JobRunner(
             await Parallel.ForEachAsync(Enumerable.Range(0, documents.Count), parallelOptions, (i, _) =>
             {
                 results[i] = AnalyzeDocument(documents[i]);
-                if (throttle.ShouldReport(job.IncrementProcessed()))
+                var processed = job.IncrementProcessed();
+                if (throttle.ShouldReport(processed))
                 {
+                    logger.LogDebug("Progress {Processed}/{Total}", processed, documents.Count);
                     events.JobProgress(job);
                 }
 
@@ -80,7 +83,7 @@ public sealed class JobRunner(
         var summary = BuildSummary(results, time.GetElapsedTime(startTimestamp));
         if (summary.Succeeded == 0 && summary.TotalDocuments > 0)
         {
-            logger.LogWarning("All {Total} documents failed", summary.TotalDocuments);
+            logger.LogError("Job failed: all {Total} documents failed", summary.TotalDocuments);
             if (job.TryFail("All documents failed to process", time.GetUtcNow()))
             {
                 events.JobFailed(job);
@@ -118,7 +121,7 @@ public sealed class JobRunner(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // One bad document must not fail the whole job.
+            // One bad document must not fail the whole job: a Warning, the job itself continues.
             logger.LogWarning(ex, "Document {Index} ({Name}) failed", document.Index, document.Name);
             return new DocumentResultDto(
                 document.Index,

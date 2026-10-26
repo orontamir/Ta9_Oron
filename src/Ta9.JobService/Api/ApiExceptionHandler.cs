@@ -25,7 +25,15 @@ public sealed class ApiExceptionHandler(IProblemDetailsService problemDetails, I
             return false;
         }
 
-        logger.LogWarning(exception, "Request failed: {Title}", title);
+        // Storage down is an error the operator must act on; a write conflict is the client's to retry.
+        if (status == StatusCodes.Status503ServiceUnavailable)
+        {
+            logger.LogError(exception, "Request failed: {Title}", title);
+        }
+        else
+        {
+            logger.LogWarning(exception, "Request failed: {Title}", title);
+        }
         httpContext.Response.StatusCode = status;
         return await problemDetails.TryWriteAsync(new ProblemDetailsContext
         {

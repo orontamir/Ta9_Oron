@@ -29,7 +29,11 @@ public sealed class WebSocketJobEventPublisher(
 
     private void AddLifecycle<TPayload>(ProcessingJob job, string type, TPayload payload)
     {
-        if (!outbox.TryAddLifecycle(Create(job, type, payload)))
+        if (outbox.TryAddLifecycle(Create(job, type, payload)))
+        {
+            logger.LogDebug("Queued {Type} for job {JobId} ({Pending} events pending)", type, job.JobId, outbox.PendingCount);
+        }
+        else
         {
             logger.LogError(
                 "Event outbox is full; dropping {Type} for job {JobId}. The Job Service reconciler will recover the job state.",

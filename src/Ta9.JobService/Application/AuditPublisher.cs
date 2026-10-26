@@ -105,12 +105,20 @@ public sealed class AuditPublisher(
     {
         var pending = await jobs.FindUnpublishedTerminalAsync(options.Value.BatchSize, cancellationToken);
         int published = 0, rejected = 0;
+        if (pending.Count > 0)
+        {
+            logger.LogDebug("Publishing {Count} pending job summaries to the audit service", pending.Count);
+        }
 
         foreach (var job in pending)
         {
+            // The job's correlation id travels to the Audit Service, so its log lines join the same flow.
+            using var correlation = Correlation.BeginScope(job.CorrelationId ?? Correlation.NewId());
+            using var logScope = logger.BeginScope(new Dictionary<string, object> { ["JobId"] = job.Id });
             var outcome = await audit.PublishAsync(ToRequest(job), cancellationToken);
             if (outcome == AuditPublishOutcome.Unavailable)
             {
+                logger.LogDebug("Audit service unavailable while publishing job {JobId}; batch stopped", job.Id);
                 // Stop the batch: the next jobs would fail the same way.
                 return new AuditPublishReport(published, rejected, AuditUnavailable: true);
             }
@@ -122,6 +130,7 @@ public sealed class AuditPublisher(
             }
             else
             {
+                logger.LogDebug("Audit entry recorded for job {JobId} ({Status})", job.Id, job.Status);
                 published++;
             }
 

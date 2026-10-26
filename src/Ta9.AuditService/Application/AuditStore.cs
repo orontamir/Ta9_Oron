@@ -28,6 +28,7 @@ public sealed class AuditLog(IAuditRepository repository, TimeProvider time, ILo
             return new RecordResult(true, entry);
         }
 
+        logger.LogDebug("Audit entry for job {JobId} already exists; keeping the first one", request.JobId);
         var existing = await repository.GetAsync(request.JobId, cancellationToken);
         return new RecordResult(false, existing ?? entry);
     }

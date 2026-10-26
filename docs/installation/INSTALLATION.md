@@ -5,7 +5,8 @@
 | **System** | Job Service (:5001) · Processor Service (:5002) · Audit Service (:5003) · MongoDB (:27017) |
 | **Stack** | .NET 8 · ASP.NET Core · MongoDB 7 · Docker / Docker Compose |
 | **Repository** | https://github.com/orontamir/Ta9_Oron |
-| **Related documents** | `README.md` (overview) · `docs/hld/TA9-HLD.docx` (High-Level Design) |
+| **Related documents** | `README.md` (overview) · `docs/hld/TA9-HLD.docx` (High-Level Design) · `docs/logging/TA9-Logging-Observability.docx` (logs in detail) |
+| **If something goes wrong** | **§5 Troubleshooting — where to look** (does not start · stuck · crashes) |
 
 ## 1. Overview
 
@@ -16,7 +17,7 @@ The system consists of three ASP.NET Core services and a MongoDB database:
 | Job Service | 5001 | Public API `/api/jobs`, SSE stream, WebSocket endpoint for the processor | http://localhost:5001/swagger |
 | Processor Service | 5002 | Internal API `/api/process`, document analysis | http://localhost:5002/swagger |
 | Audit Service | 5003 | `/api/audit`, summaries of finished jobs | http://localhost:5003/swagger |
-| MongoDB | 27017 | Storage for jobs, documents and audit entries | — |
+| MongoDB | 27017 | Storage for jobs, documents and audit entries; **logs of all services** (`ta9_logs.logs`) | — |
 
 There are three ways to run it:
 
@@ -104,20 +105,20 @@ dotnet run --project src/Ta9.AuditService        # terminal 3 → http://localho
 
 ### 3.3 Option B — no database (in-memory storage)
 
-Job Service and Audit Service can keep everything in memory. Nothing is persisted across restarts.
+Job Service and Audit Service can keep everything in memory. Nothing is persisted across restarts. Without a database, also turn off log storage in MongoDB (logs still go to the console). Otherwise every service prints a `[ta9-log-sink] could not store …` line to stderr every 30 s.
 
 ```powershell
-# PowerShell
-$env:Storage__Provider = "InMemory"; dotnet run --project src/Ta9.JobService
-$env:Storage__Provider = "InMemory"; dotnet run --project src/Ta9.AuditService
-dotnet run --project src/Ta9.ProcessorService
+# PowerShell (each line in its own terminal)
+$env:Logging__Mongo__Enabled = "false"; $env:Storage__Provider = "InMemory"; dotnet run --project src/Ta9.JobService
+$env:Logging__Mongo__Enabled = "false"; $env:Storage__Provider = "InMemory"; dotnet run --project src/Ta9.AuditService
+$env:Logging__Mongo__Enabled = "false"; dotnet run --project src/Ta9.ProcessorService
 ```
 
 ```bash
 # bash
-Storage__Provider=InMemory dotnet run --project src/Ta9.JobService
-Storage__Provider=InMemory dotnet run --project src/Ta9.AuditService
-dotnet run --project src/Ta9.ProcessorService
+Logging__Mongo__Enabled=false Storage__Provider=InMemory dotnet run --project src/Ta9.JobService
+Logging__Mongo__Enabled=false Storage__Provider=InMemory dotnet run --project src/Ta9.AuditService
+Logging__Mongo__Enabled=false dotnet run --project src/Ta9.ProcessorService
 ```
 
 ### 3.4 Verify
@@ -148,7 +149,14 @@ All settings are in each service's `appsettings.json` and can be overridden with
 | Processor | `Processing__DocParallelismPerJob` | `2` | Documents analyzed in parallel per job |
 | Audit | `Storage__Provider` | `Mongo` | `Mongo` or `InMemory` |
 | Audit | `Storage__ConnectionString` | `mongodb://localhost:27017` | MongoDB connection |
-| All | `Logging__UseJsonConsole` | `true` (`false` in Development) | JSON or human-readable logs |
+| All | `Logging__UseJsonConsole` | `true` (`false` in Development) | JSON or human-readable console logs |
+| All | `Logging__Console__MinimumLevel` | `Information` | Lowest level printed to the console (`docker compose logs`) |
+| All | `Logging__Mongo__Enabled` | `true` | Store logs in MongoDB |
+| All | `Logging__Mongo__ConnectionString` | `mongodb://localhost:27017` | Log database server (`mongodb://mongo:27017` in Docker) |
+| All | `Logging__Mongo__Database` / `__Collection` | `ta9_logs` / `logs` | Where logs are stored (one collection for all services) |
+| All | `Logging__Mongo__MinimumLevel` | `Debug` | Lowest level stored in MongoDB |
+| All | `Logging__Mongo__RetentionDays` | `7` | TTL: older records are deleted by MongoDB automatically |
+| All | `Serilog__MinimumLevel__Default` | `Debug` | Global gate: nothing below it is logged anywhere |
 
 ## 4. Deploy to Docker Desktop
 
@@ -228,6 +236,8 @@ Other ways to try the API:
 | Stop (keep data) | `docker compose down` |
 | Stop and delete MongoDB data | `docker compose down -v` |
 | Inspect MongoDB | `docker compose exec mongo mongosh ta9_jobs --eval "db.jobs.find().limit(5)"` |
+| Logs of one job (all services, Debug and up) | `docker compose exec mongo mongosh ta9_logs --quiet --eval "db.logs.find({jobId:'<job-id>'},{_id:0,timestamp:1,service:1,level:1,message:1}).sort({timestamp:1})"` |
+| Latest errors | `docker compose exec mongo mongosh ta9_logs --quiet --eval "db.logs.find({level:'Error'}).sort({timestamp:-1}).limit(20)"` |
 
 The containers also appear in the Docker Desktop dashboard under **Containers → ta9**, where logs, health and resource usage are visible.
 
@@ -242,7 +252,7 @@ While the Job Service restarts, the processor logs `Job Service events connectio
 
 ### 4.6 Restricted networks — prebuilt images
 
-If the build fails with `NU1301` (see §5.1), publish the services on the host, where restore works, and let Docker only package the binaries:
+If the build fails with `NU1301` (see §6.1), publish the services on the host, where restore works, and let Docker only package the binaries:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\docker-up-prebuilt.ps1
@@ -259,11 +269,116 @@ docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build -
 
 It uses `Dockerfile.prebuilt`. The compose file, health checks and configuration are identical to the standard path. Verify as in §4.3.
 
-## 5. Error Messages Encountered & Fixes
+## 5. Troubleshooting — where to look
+
+When the system **does not start**, **gets stuck** or **crashes**, the answer is almost always in one of four places. Check them in this order.
+
+### 5.1 The four places
+
+| # | Where | What it shows | Command |
+|---|---|---|---|
+| 1 | **Container state** | Which service is down, restarting or unhealthy | `docker compose ps` (Docker Desktop: *Containers → ta9*) |
+| 2 | **Console logs** (`docker compose logs`) | The **flow** (Information), warnings and errors of each service. Written synchronously, so the **last lines before a crash are always here** | `docker compose logs --tail 200 <service>` · `docker compose logs -f` |
+| 3 | **MongoDB `ta9_logs.logs`** | **Everything from Debug up**, from all three services, for 7 days, searchable by job, correlation id, level and service | `docker compose exec mongo mongosh ta9_logs` (queries in §5.3) |
+| 4 | **Health endpoints** | Whether each service and its dependencies are usable now | `curl.exe http://localhost:5001/health/ready` (and :5002, :5003) |
+
+Every log record carries `Service`, `CorrelationId` and, inside job processing, `JobId`. The **correlation id** follows one job from the API call through dispatch, processing, WebSocket events and audit. To see the whole story of a job across the three services, query by `jobId` or `correlationId`.
+
+### 5.2 Log levels
+
+| Level | Meaning | Examples | Console | MongoDB |
+|---|---|---|---|---|
+| **Debug** | Detail for investigating a failure | `Claimed job … for dispatch`, `Progress 300/1000`, `Acknowledged JobCompleted …`, `POST api/process … returned 202` | — | ✔ |
+| **Information** | The normal **flow** | `Job … created`, `Job … dispatched to the processor`, `Job started with 1000 documents`, `Job completed …`, `Applied JobCompleted …`, `Recorded audit entry …`, `HTTP POST /api/jobs responded 201` | ✔ | ✔ |
+| **Warning** | Something went wrong and the system handles it | `Processor unreachable (attempt 2) … Next try at …`, `Document 7 (a.txt) failed`, `Job Service events connection failed (attempt 3)` | ✔ | ✔ |
+| **Error** | An operation failed; usually needs attention | `Giving up on job …`, `Processor rejected job …`, `Job failed: all 3 documents failed`, `Request failed: Storage unavailable`, `Dispatch loop iteration failed` (+ stack trace) | ✔ | ✔ |
+| **Critical** | The process is about to terminate | `Unhandled exception (process terminating: True)` (+ stack trace) | ✔ | ✔ (flushed before exit) |
+
+To see Debug on the console too, without rebuilding: set `Logging__Console__MinimumLevel: Debug` under `environment:` in `docker-compose.yml`, then run `docker compose up -d`.
+
+### 5.3 Useful log queries (mongosh)
+
+Open a shell with `docker compose exec mongo mongosh ta9_logs`, then:
+
+```javascript
+// The full story of one job, all services, oldest first
+db.logs.find({ jobId: "<job-id>" }, { _id: 0, timestamp: 1, service: 1, level: 1, message: 1 }).sort({ timestamp: 1 })
+
+// Errors and crashes in the last hour, with stack traces
+db.logs.find({ level: { $in: ["Error", "Critical"] }, timestamp: { $gt: new Date(Date.now() - 3600 * 1000) } }).sort({ timestamp: -1 })
+
+// One request / flow by correlation id (X-Correlation-Id response header)
+db.logs.find({ correlationId: "<id>" }).sort({ timestamp: 1 })
+
+// Latest lines of one service, e.g. after a restart
+db.logs.find({ service: "processor-service" }).sort({ timestamp: -1 }).limit(50)
+
+// Startup lines of each service: where it listens and how it logs
+db.logs.find({ message: /^(Service started|Logging:)/ }).sort({ timestamp: -1 }).limit(6)
+```
+
+### 5.4 The system does not start
+
+1. `docker compose ps`. A service that is `Exited`, `Restarting` or stays `(health: starting)` is the one to inspect.
+2. `docker compose logs --tail 100 <service>`. A healthy start always prints two lines:
+   - `Logging: console >= Information; MongoDB ta9_logs.logs >= Debug (retention 7 days)`
+   - `Service started: environment Production, version …, listening on http://[::]:8080`
+
+   If the second line is missing, the reason is just above it.
+
+| Symptom | Where | Typical cause | Fix |
+|---|---|---|---|
+| `mongo` unhealthy; the other services never start | `docker compose logs mongo` | Port 27017 taken, corrupt volume, not enough disk | Free the port; `docker compose down -v` (deletes data); free disk space |
+| `Hosting failed to start` / `OptionsValidationException` | Service console log | Invalid setting, e.g. empty `Storage__Mongo__ConnectionString` | Fix the variable in `docker-compose.yml`; `docker compose up -d` |
+| `Bind for 0.0.0.0:5001 failed: port is already allocated` | `docker compose up` output | Another process uses the port | Stop it or change the host port (`"5101:8080"`) |
+| Build fails with `NU1301` | `docker compose up --build` output | TLS-inspecting proxy | §4.6 prebuilt images |
+| Processor `/health/ready` = `Degraded` | Processor log: `Job Service events connection failed (attempt N)` | Job Service not up yet / wrong `JobServiceEvents__Url` | Wait (it reconnects); check the URL |
+| `[ta9-log-sink] … could not store N log events` on stderr | Service console log | Log database unreachable; **the service itself still works** | Check `mongo`; `Logging__Mongo__ConnectionString` |
+
+### 5.5 The system is stuck (jobs do not move)
+
+Find where the job stopped. `GET /api/jobs/<id>` shows the status. The job's log records (§5.3) show the last step that happened.
+
+| Job stuck in | Look for (MongoDB or console) | Meaning | Action |
+|---|---|---|---|
+| `Pending` | Job Service: `Processor unreachable (attempt N) … Next try at …` / `Processor busy; job … will be dispatched again at …` | Dispatcher cannot hand the job over; retries with backoff (after 5 failed attempts the job becomes **Failed**: `Giving up on job …`) | `docker compose ps processor-service`; processor logs; `curl.exe :5002/health/ready` |
+| `Pending`, no dispatcher lines at all | Job Service: `Dispatch loop iteration failed` (Error) or `Job dispatching is disabled by configuration` | Storage error in the loop, or `Dispatch__Enabled=false` | Fix MongoDB / the setting |
+| `Queued` | Processor: `Job … accepted`, then `Worker N picked up job …` (Debug) | Waiting for a free worker (10 jobs run at once, 100 can wait) | Normal under load; see `Processing__MaxConcurrentJobs` |
+| `Processing`, progress not changing | Processor: `Progress x/y` (Debug); Job Service: `Applied JobProgress…` | Large job still running, or events not reaching the Job Service | Processor `/health/ready` = `Degraded` → WebSocket down; it reconnects and replays |
+| `Processing` after a processor restart | Job Service: `Processor no longer knows job …; redispatching` / `Reconciliation: …` | Reconciler recovers the job within ~1–2 minutes (`Reconcile__StaleAfter`) | Wait; after 3 redispatches the job is Failed |
+| Finished, but no audit entry | Job Service: `Audit service unavailable; retrying in …` | Audit Service down; summaries are kept and sent later | `docker compose ps audit-service`; audit logs |
+| API calls return `503 Storage unavailable` | Job Service: `Request failed: Storage unavailable` (Error) | MongoDB unreachable | `docker compose ps mongo`; `docker compose logs mongo` |
+
+### 5.6 A service crashes or keeps restarting
+
+1. `docker compose ps` shows `Restarting`, or a recent `Up` time. Get the details with `docker inspect --format "{{.State.ExitCode}} {{.State.OOMKilled}} {{.RestartCount}}" ta9-processor-service-1`.
+2. `docker compose logs --tail 200 <service>`. Look for **`Unhandled exception (process terminating: True)`** (Critical, with stack trace) or `Error` lines just before the stop.
+3. MongoDB: `db.logs.find({ service: "<service>", level: { $in: ["Error", "Critical"] } }).sort({ timestamp: -1 }).limit(20)`.
+
+| Finding | Meaning | Action |
+|---|---|---|
+| `Critical … Unhandled exception` with a stack trace | A bug escaped every handler | Report the stack trace and correlation id |
+| Exit code `137` and `OOMKilled true` | Container killed for memory | Raise the Docker Desktop memory limit or lower `Processing__MaxConcurrentJobs` |
+| Exit code `137`, no OOM, nothing in the logs | Killed from outside (`docker kill`, Docker Desktop restart) | — |
+| `Worker N crashed on job …` (Error) | One job failed unexpectedly. **The worker and the service survive** | Inspect the stack trace; the job becomes Failed |
+
+Records still in the buffer (up to ~1 s of Debug detail) can be missing from MongoDB after a hard kill (`137`). For a crash, the **console log is the source of truth**. On an unhandled exception the buffer is flushed before the process exits.
+
+### 5.7 Logs are missing in MongoDB
+
+| Check | How |
+|---|---|
+| Logging to MongoDB is on | First lines of the service: `Logging: … MongoDB ta9_logs.logs >= Debug` (not `disabled`) |
+| The log database is reachable | No `[ta9-log-sink] … could not store` lines on the console |
+| Nothing was dropped | `db.logs.find({ message: /log events were not stored/ })`. After an outage or overload, the first stored batch reports how many records were lost |
+| The level is stored | `Logging__Mongo__MinimumLevel` and `Serilog__MinimumLevel__Default` must both allow it |
+| Records are not too old | Records older than `Logging__Mongo__RetentionDays` (7) are deleted by the TTL index |
+
+## 6. Error Messages Encountered & Fixes
 
 The errors below were encountered while building and deploying this system, with their root cause and the fix applied.
 
-### 5.1 Docker build fails: NU1301 Unable to load the service index
+### 6.1 Docker build fails: NU1301 Unable to load the service index
 
 **Symptom:** `docker compose up --build` stops at the restore step:
 
@@ -288,7 +403,7 @@ curl: (60) SSL certificate problem: self-signed certificate in certificate chain
 
 **Fix:** Use the prebuilt path (§4.6). Do **not** bake a corporate CA certificate into the repository or the images. If your IT department allows it, an alternative is to add the corporate root CA to Docker Desktop and the build, but that is environment-specific and not part of this repository.
 
-### 5.2 PowerShell: script is not digitally signed
+### 6.2 PowerShell: script is not digitally signed
 
 **Symptom:**
 
@@ -309,7 +424,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\docker-up-prebuilt.ps1
 
 For a repository downloaded as a ZIP, `Get-ChildItem -Recurse .\scripts | Unblock-File` also works. If a group policy blocks `Bypass`, run the commands listed in §4.6 manually.
 
-### 5.3 git push: 403, permission denied to another account
+### 6.3 git push: 403, permission denied to another account
 
 **Symptom:**
 
@@ -329,7 +444,7 @@ git push -u origin main
 
 Do not delete the other account's stored credential, because other repositories still need it.
 
-### 5.4 git push: GH007, push would publish a private email address
+### 6.4 git push: GH007, push would publish a private email address
 
 **Symptom:**
 
@@ -350,7 +465,7 @@ git push -u origin main
 
 Environment variables such as `GIT_AUTHOR_EMAIL` override `git config`. If they are set, as in some managed workstations, set them for the commit as well.
 
-### 5.5 git commit hangs on a network share
+### 6.5 git commit hangs on a network share
 
 **Symptom:** `git commit` never finishes. The process waits on I/O while reading `.git/objects/pack/*.pack`.
 
@@ -358,7 +473,7 @@ Environment variables such as `GIT_AUTHOR_EMAIL` override `git config`. If they 
 
 **Fix:** Close IDEs and git tools on the other machine while committing; the commit then completes. Better still, clone the repository to a local disk.
 
-### 5.6 Issues caught by the automated tests during development (already fixed in the code)
+### 6.6 Issues caught by the automated tests during development (already fixed in the code)
 
 | Failing tests / symptom | Cause | Fix |
 |---|---|---|
@@ -368,19 +483,21 @@ Environment variables such as `GIT_AUTHOR_EMAIL` override `git config`. If they 
 | Runner tests saw unexpected `JobProgress` events | Small jobs legitimately report progress per document | Lifecycle assertions ignore progress; progress is tested separately |
 | Smoke test printed `Created  job(s)` (count missing) | Windows PowerShell 5.1 has no `.Count` on a single object | Result wrapped in `@()` |
 
-### 5.7 Other messages you may see
+### 6.7 Other messages you may see
 
 | Message | Meaning / fix |
 |---|---|
 | `Job Service events connection failed (attempt N)` in processor logs | **Expected** while the Job Service is starting or restarting; the processor reconnects automatically. Persistent: check `JobServiceEvents__Url` |
 | `/health/ready` of the processor returns `Degraded` | The WebSocket link is down; work is still accepted and events are buffered. Resolves when the Job Service is reachable |
 | API returns `503 Storage unavailable` | MongoDB is unreachable: `docker compose ps mongo`, `docker compose logs mongo` |
+| `[ta9-log-sink] … could not store N log events: TimeoutException …` on stderr | The log database is unreachable. The service keeps working and logs still go to the console (§5.7) |
+| Warning `N log events were not stored (buffer full or log database unavailable)` in `ta9_logs.logs` | Records lost during an outage or an extreme burst. The count is exact; the console has the full sequence |
 | `Bind for 0.0.0.0:5001 failed: port is already allocated` | Another process uses the port: stop it, or change the host port in `docker-compose.yml` (e.g. `"5101:8080"`) |
 | `error during connect … docker_engine` / `Cannot connect to the Docker daemon` | Docker Desktop is not running: start it and wait for *Engine running* |
 | Integration tests fail with `Docker is either not running or misconfigured` | Testcontainers needs Docker Desktop running, or run `dotnet test --filter "Category!=Integration"` |
 | `fatal: detected dubious ownership in repository` | Repository on a network share: `git config --global --add safe.directory '<path>'` |
 
-## 6. Uninstall
+## 7. Uninstall
 
 ```powershell
 docker compose down -v                      # remove containers, network and MongoDB volume

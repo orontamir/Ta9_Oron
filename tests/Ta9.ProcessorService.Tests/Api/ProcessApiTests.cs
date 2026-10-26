@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Ta9.Contracts.Processing;
 using Ta9.ProcessorService.Domain;
 using Ta9.ProcessorService.Tests.TestSupport;
+using Ta9.Tests.Shared;
 
 namespace Ta9.ProcessorService.Tests.Api;
 
@@ -15,12 +16,15 @@ public sealed class ProcessApiTests : IDisposable
 {
     private readonly List<IDisposable> _disposables = [];
 
+    private CapturingLogWriter Logs { get; } = new();
+
     public void Dispose() => _disposables.ForEach(d => d.Dispose());
 
     private HttpClient CreateClient(IDocumentAnalyzer? analyzer = null, params (string Key, string Value)[] settings)
     {
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
+            Logs.AttachTo(builder);
             foreach (var (key, value) in settings)
             {
                 builder.UseSetting(key, value);

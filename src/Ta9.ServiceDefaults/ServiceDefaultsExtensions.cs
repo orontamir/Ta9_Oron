@@ -3,15 +3,18 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
+using Ta9.ServiceDefaults.Logging;
 
 namespace Ta9.ServiceDefaults;
 
 /// <summary>
-/// Cross-cutting hosting setup shared by all services: structured logging, correlation ids,
+/// Cross-cutting hosting setup shared by all services: structured logging (console + MongoDB), correlation ids,
 /// ProblemDetails error responses and liveness/readiness health endpoints.
 /// </summary>
 public static class ServiceDefaultsExtensions
@@ -21,25 +24,44 @@ public static class ServiceDefaultsExtensions
 
     public static WebApplicationBuilder AddServiceDefaults(this WebApplicationBuilder builder, string serviceName)
     {
-        builder.Host.UseSerilog((context, configuration) =>
+        var mongoLogSection = builder.Configuration.GetSection(MongoLogOptions.SectionName);
+        builder.Services.Configure<MongoLogOptions>(mongoLogSection);
+        builder.Services.TryAddSingleton<ILogBatchWriter>(sp => new MongoLogBatchWriter(sp.GetRequiredService<IOptions<MongoLogOptions>>().Value));
+        builder.Services.AddSingleton<LogSinkHolder>();
+        builder.Services.AddHostedService<ServiceLifecycleLogger>();
+
+        builder.Host.UseSerilog((context, services, configuration) =>
         {
             configuration
                 .ReadFrom.Configuration(context.Configuration)
                 .Enrich.FromLogContext()
                 .Enrich.WithProperty("Service", serviceName);
 
-            // JSON for containers/log shippers; a readable template for local development.
+            // Console: the flow (Information and above by default). JSON for containers/log shippers,
+            // a readable template for local development.
+            var consoleLevel = context.Configuration.GetValue("Logging:Console:MinimumLevel", LogEventLevel.Information);
             if (context.Configuration.GetValue("Logging:UseJsonConsole", true))
             {
-                configuration.WriteTo.Console(new CompactJsonFormatter());
+                configuration.WriteTo.Console(new CompactJsonFormatter(), restrictedToMinimumLevel: consoleLevel);
             }
             else
             {
                 configuration.WriteTo.Console(
+                    restrictedToMinimumLevel: consoleLevel,
                     outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Service} {CorrelationId} {JobId} {Message:lj}{NewLine}{Exception}");
             }
+
+            // MongoDB: everything from Debug up (by default), batched in the background, for investigating failures later.
+            var mongo = services.GetRequiredService<IOptions<MongoLogOptions>>().Value;
+            if (mongo.Enabled)
+            {
+                var sink = new BatchingLogSink(services.GetRequiredService<ILogBatchWriter>(), serviceName, mongo);
+                services.GetRequiredService<LogSinkHolder>().Sink = sink;
+                configuration.WriteTo.Sink(sink, mongo.MinimumLevel);
+            }
         },
-        // Each host owns its logger; the static Log.Logger is never touched (several hosts run side by side in tests).
+        // Each host owns its logger (disposed with the host, which flushes the Mongo sink); the static Log.Logger
+        // is never touched (several hosts run side by side in tests).
         preserveStaticLogger: true);
 
         builder.Services.AddProblemDetails();

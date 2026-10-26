@@ -16,10 +16,15 @@
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+    <PackageReference Include="Testcontainers.MongoDb" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Ta9.ServiceDefaults\Ta9.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\TestLogging.cs" Link="Shared\TestLogging.cs" />
   </ItemGroup>
 
   <ItemGroup>

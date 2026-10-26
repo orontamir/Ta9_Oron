@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using Ta9.ServiceDefaults;
 
 namespace Ta9.ProcessorService.Application;
 
@@ -29,8 +30,11 @@ public sealed class JobWorkerService(
         {
             await foreach (var job in queue.ReadAllAsync(stoppingToken))
             {
+                // The job's correlation id also covers the worker's own lines (pick-up, crash).
+                using var correlation = job.CorrelationId is { } correlationId ? Correlation.BeginScope(correlationId) : null;
                 try
                 {
+                    logger.LogDebug("Worker {WorkerId} picked up job {JobId}", workerId, job.JobId);
                     await runner.RunAsync(job, stoppingToken);
                 }
                 catch (Exception ex)
@@ -43,6 +47,7 @@ public sealed class JobWorkerService(
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
             // Normal shutdown.
+            logger.LogDebug("Worker {WorkerId} stopped", workerId);
         }
     }
 }

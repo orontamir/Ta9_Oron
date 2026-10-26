@@ -243,12 +243,16 @@ public sealed class JobsApiStorageFailureTests : IClassFixture<JobServiceFactory
         public Task<IReadOnlyList<Job>> FindUnpublishedTerminalAsync(int limit, CancellationToken ct) => throw Down();
     }
 
+    private readonly JobServiceFactory _factory;
     private readonly HttpClient _client;
 
-    public JobsApiStorageFailureTests(JobServiceFactory factory) =>
+    public JobsApiStorageFailureTests(JobServiceFactory factory)
+    {
+        _factory = factory;
         _client = factory.WithWebHostBuilder(builder =>
                 builder.ConfigureTestServices(services => services.AddSingleton<IJobRepository>(new UnreachableJobRepository())))
             .CreateClient();
+    }
 
     [Fact]
     public async Task Storage_timeout_returns_503_problem()
@@ -258,5 +262,18 @@ public sealed class JobsApiStorageFailureTests : IClassFixture<JobServiceFactory
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         var problem = (await response.Content.ReadFromJsonAsync<ProblemDetails>())!;
         problem.Title.Should().Be("Storage unavailable");
+    }
+
+    [Fact]
+    public async Task Storage_outage_is_logged_as_an_error_with_the_correlation_id()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/jobs/{Guid.NewGuid()}");
+        request.Headers.Add(Correlation.HeaderName, "storage-down-1");
+
+        await _client.SendAsync(request);
+
+        var errors = await _factory.Logs.WaitForAsync(r => r.CorrelationId == "storage-down-1" && r.Message == "Request failed: Storage unavailable");
+        errors.Single().Level.Should().Be("Error");
+        errors.Single().Exception.Should().Contain(nameof(StorageUnavailableException)).And.Contain("MongoDB is unreachable");
     }
 }

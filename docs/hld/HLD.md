@@ -6,7 +6,8 @@
 | **System** | TA9 Document Processing (Job Service · Processor Service · Audit Service) |
 | **Stack** | C# / .NET 8 · ASP.NET Core · MongoDB 7 · Docker Compose |
 | **Diagrams** | Editable source: [`diagrams/ta9-hld.drawio`](diagrams/ta9-hld.drawio) (one page per diagram). Open with [app.diagrams.net](https://app.diagrams.net) or the VS Code *Draw.io Integration* extension. PNG renderings are in [`images`](images) |
-| **Detailed design** | [`../design`](../design) — architecture, API contracts, reliability, decision log (D1–D24) |
+| **Detailed design** | [`../design`](../design) — architecture, API contracts, reliability, decision log (D1–D26) |
+| **Topic documents** | Concurrency (`../concurrency`), WebSocket behavior (`../websocket`), Storage (`../storage`), **Logging & Observability** (`../logging`) |
 
 | draw.io page | Section |
 |---|---|
@@ -16,6 +17,10 @@
 | 4. Job State Machine | [§7 Job lifecycle](#7-job-lifecycle-state-machine) |
 | 5a / 5b / 5c. Sequence | [§8 Sequence diagrams](#8-sequence-diagrams) |
 | 6. Deployment | [§10 Deployment](#10-deployment) |
+| 7 / 8. Concurrency | [§9.1 Concurrency and performance](#91-concurrency-and-performance) |
+| 9. WebSocket — Connection & Outbox | [§9.2 Reliability](#92-reliability) |
+| 10. Storage | [§5.1 Data model](#51-data-model-mongodb) |
+| 11. Logging | [§9.4 Observability](#94-observability) |
 
 ---
 
@@ -41,7 +46,7 @@ The system accepts batches of text documents, analyzes them asynchronously and e
 | Performance | ≥ 10 concurrent jobs × up to 1,000 documents; no unbounded parallelism; no blocked threads | Bounded channel (100) + 10 workers × 2 documents in parallel; async I/O; verified by an integration test |
 | Reliability | Invalid input, processor unreachable, WS disconnects, duplicates | Validation (400), persisted retries with backoff, outbox + ack + reconnect, idempotent handlers, reconciler |
 | Storage | Replaceable persistence | Repository interfaces; MongoDB and InMemory implementations selected by configuration |
-| Observability | — | Structured logs (Serilog), end-to-end correlation id, liveness and readiness health checks |
+| Observability | Meaningful logs for lifecycle, failures and retries (plus: logs in **MongoDB** and on the **console**, Debug / Information / Error levels) | One Serilog pipeline: console ≥ Information, MongoDB `ta9_logs.logs` ≥ Debug (batched, non-blocking, 7-day TTL); `Service` / `CorrelationId` / `JobId` on every record; health checks |
 
 ## 3. Architecture diagram
 
@@ -57,7 +62,7 @@ The system accepts batches of text documents, analyzes them asynchronously and e
 | **Processor Service** | Stateless worker: accepts work, analyzes documents with bounded concurrency, reports the lifecycle | In memory (finished results kept 1 h for reconciliation) | Job Service (WS client) |
 | **Audit Service** | Stores immutable summaries of finished jobs | MongoDB `ta9_audit` (`audit_entries`) | — |
 | **Ta9.Contracts** (library) | Shared REST DTOs, WS event envelope and serializer, input limits | — | — |
-| **Ta9.ServiceDefaults** (library) | Serilog, correlation id, ProblemDetails, health endpoints, exponential backoff | — | — |
+| **Ta9.ServiceDefaults** (library) | Logging pipeline (Serilog → console + batched MongoDB sink), lifecycle / crash logging, correlation id, ProblemDetails, health endpoints, exponential backoff | MongoDB `ta9_logs` (`logs`, shared by all services) | MongoDB (logs) |
 
 ### 3.2 Communication
 
@@ -110,6 +115,7 @@ The system accepts batches of text documents, analyzes them asynchronously and e
 | `jobs` | `_id` = job id (string GUID) | status, counters, summary, timestamps, dispatch bookkeeping (`dispatchAttempts`, `nextDispatchAt`, `leaseUntil`, `redispatchCount`), `auditPublished`, `version` | `{status, nextDispatchAt}` (dispatcher) · `{status, updatedAt}` (reconciler) · `{auditPublished, status}` (audit) · `{createdAt: -1}` (listing) |
 | `job_documents` | `_id` = `"{jobId}-{index}"` | jobId, index, name, content, result | `{jobId, index}` unique |
 | `audit_entries` | `_id` = job id | status, counts, total words, failure reason, timestamps, `recordedAt` | — |
+| `ta9_logs.logs` | ObjectId | timestamp, level, service, host, message, messageTemplate, sourceContext, `correlationId`, `jobId`, exception, properties | **TTL** `{timestamp}` 7 days · `{jobId, timestamp}` · `{correlationId, timestamp}` · `{level, timestamp}` · `{service, timestamp}` |
 
 Documents live in a separate collection so that a 1,000-document job never approaches the 16 MB BSON limit and status reads stay small. There are no multi-document transactions. Instead, documents are written before the job (the job is the commit marker) and deleted after it.
 
@@ -174,10 +180,26 @@ Full analysis with diagrams, advantages, limitations and alternatives: [`../conc
 - At larger scale, a durable broker (RabbitMQ or Kafka) would replace REST dispatch, WS events and the reconciler.
 
 ### 9.4 Observability
-- **Logging:** Serilog JSON logs enriched with `Service`, `CorrelationId` and `JobId`.
-- **Correlation id:** propagated over HTTP headers and inside WS envelopes.
-- **Health:** `/health/live` and `/health/ready`, used by the compose health checks.
-- **Next step:** OpenTelemetry traces and metrics (queue depth, dispatch latency, outbox size).
+*draw.io page **11. Logging***. Full description, alternatives, limitations and tests: [`../logging/LOGGING.md`](../logging/LOGGING.md). Where to look when something fails: Installation Guide §5.
+
+![Logging & observability](images/logging.png)
+
+**One pipeline, two destinations.** `AddServiceDefaults` configures Serilog identically in the three services:
+
+| Destination | Levels | Role | Properties |
+|---|---|---|---|
+| Console (`docker compose logs`) | **Information** and up | Live flow, warnings, errors | Synchronous: the last lines before a crash are always there. JSON in Docker |
+| MongoDB `ta9_logs.logs` | **Debug** and up | History for investigating failures, searchable across services | `BatchingLogSink`: bounded queue (10,000), never blocks, batches of 100 / 1 s, drops counted and reported, flushed on shutdown and crash; 3 s fail-fast writer; 7-day TTL |
+
+**Levels.** Debug = detail (claims, HTTP results, progress, acks); Information = the job flow (created → dispatched → started → completed → applied → audited) and one line per HTTP request; Warning = handled problems (retry, one failed document, WS reconnect); Error = failed operations with the stack trace (giving up, rejected, storage down, all documents failed); Critical = unhandled exception, process terminating. Client errors (4xx) are not Errors.
+
+**Correlation.** `X-Correlation-Id` (or a generated id) is stored with the job and restored by every background step. It travels in HTTP headers and in WebSocket envelopes, and a scope adds `JobId` to every line of job processing. One query, `db.logs.find({ jobId })`, shows a job's path through all three services.
+
+**Health and lifecycle.** `/health/live` and `/health/ready` (MongoDB; the processor WebSocket link reports Degraded). At startup each service logs where its logs go and *Service started … listening on …*. Unhandled exceptions are logged as Critical.
+
+**Logging never hurts the service.** If MongoDB is down, records are dropped and counted, `[ta9-log-sink]` lines go to stderr (at most one per 30 s), and the console keeps everything.
+
+**Next step:** OpenTelemetry traces and metrics (queue depth, dispatch latency, outbox size), and a dedicated log platform fed by the console JSON.
 
 ### 9.5 Security (POC scope)
 - No authentication, by assignment. Production would add JWT on the public API and mTLS or a shared secret between services.
@@ -192,7 +214,8 @@ Full analysis with diagrams, advantages, limitations and alternatives: [`../conc
 
 - **Images:** one multi-stage `Dockerfile` (`PROJECT` build arg) with a cached restore layer, the `aspnet:8.0` runtime and a non-root user. `Dockerfile.prebuilt` serves networks with TLS inspection.
 - **Health checks:** `curl /health/ready` per service. Startup order: Mongo → Job + Audit → Processor.
-- **Configuration:** environment variables override `appsettings.json` (e.g. `Processing__MaxConcurrentJobs`, `Storage__Provider`).
+- **Configuration:** environment variables override `appsettings.json` (e.g. `Processing__MaxConcurrentJobs`, `Storage__Provider`, `Logging__Mongo__MinimumLevel`).
+- **Logs:** console → `docker compose logs`; all services → MongoDB `ta9_logs.logs` (`Logging__Mongo__ConnectionString: mongodb://mongo:27017`). Troubleshooting order: `docker compose ps` → `docker compose logs` → `ta9_logs.logs` → `/health/ready` (Installation Guide §5).
 
 ## 11. Risks, limitations and future work
 
@@ -204,3 +227,4 @@ Full analysis with diagrams, advantages, limitations and alternatives: [`../conc
 | No auth / rate limiting | Out of scope | JWT, mTLS, rate limiter |
 | A job deleted before its audit summary is published | Delete is allowed only for finished jobs | Publish before delete |
 | Long processor outage | Jobs left untouched and rechecked | Maximum age before failing |
+| Logs share the MongoDB server with the data | Console keeps everything; losses are counted and reported | Separate log platform, OpenTelemetry |

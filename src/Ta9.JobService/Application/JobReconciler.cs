@@ -94,6 +94,10 @@ public sealed class JobReconciler(
         var settings = options.Value;
         var staleBefore = time.GetUtcNow() - settings.StaleAfter;
         var stale = await jobs.FindStaleActiveAsync(staleBefore, settings.BatchSize, cancellationToken);
+        if (stale.Count > 0)
+        {
+            logger.LogDebug("Reconciling {Count} jobs without updates since {StaleBefore}", stale.Count, staleBefore);
+        }
 
         var outcomes = new List<Outcome>(stale.Count);
         foreach (var job in stale)
@@ -123,6 +127,8 @@ public sealed class JobReconciler(
         using var logScope = logger.BeginScope(new Dictionary<string, object> { ["JobId"] = job.Id });
 
         var lookup = await processor.GetAsync(job.Id, cancellationToken);
+        logger.LogDebug("Processor lookup for job {JobId} ({LocalStatus}): {Outcome} {RemoteStatus}",
+            job.Id, job.Status, lookup.Outcome, lookup.Status?.Status);
         switch (lookup.Outcome)
         {
             case LookupOutcome.Found:

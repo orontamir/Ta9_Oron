@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
+using MongoDB.Bson;
 using Ta9.Contracts.Audit;
 using Ta9.Contracts.Processing;
 using Ta9.IntegrationTests.Infrastructure;
@@ -69,6 +70,38 @@ public sealed class EndToEndTests(MongoContainerFixture mongo, ITestOutputHelper
         var audit = await EventuallyAsync(() => TryGetAuditAsync(system, created.Id), Timeout);
         audit.Status.Should().Be(AuditJobStatuses.Completed);
         audit.SucceededDocuments.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task Job_flow_is_logged_to_mongodb_by_all_three_services_under_one_correlation_id()
+    {
+        await using var system = Ta9System.Start(mongo.ConnectionString);
+        var created = await system.CreateJobAsync(["alpha beta", "gamma"]);
+        await system.WaitForStatusAsync(created.Id, Timeout, Terminal);
+        await EventuallyAsync(() => TryGetAuditAsync(system, created.Id), Timeout);
+
+        var logs = await EventuallyAsync(async () =>
+        {
+            var records = await system.GetJobLogsAsync(created.Id);
+            return records.Any(r => r["service"] == "audit-service") && records.Any(r => r["message"].AsString.StartsWith("Applied JobCompleted"))
+                ? records
+                : null;
+        }, Timeout);
+
+        string Message(BsonDocument r) => $"{r["service"]}: {r["message"]}";
+        logs.Select(Message).Should().Contain(
+        [
+            $"job-service: Job {created.Id} created with 2 documents",
+            "processor-service: Job started with 2 documents",
+            $"job-service: Applied JobCompleted to job {created.Id}"
+        ]);
+        logs.Should().Contain(r => r["service"] == "processor-service" && r["message"].AsString.StartsWith("Job completed: 2 succeeded"));
+        logs.Should().Contain(r => r["service"] == "audit-service" && r["message"].AsString.StartsWith($"Recorded audit entry for job {created.Id}"));
+        logs.Should().Contain(r => r["level"] == "Debug", "Debug details are stored in MongoDB");
+        logs.Where(r => r.Contains("correlationId")).Select(r => r["correlationId"].AsString).Distinct()
+            .Should().ContainSingle("one correlation id follows the job through all three services");
+        logs.Where(r => r["level"] != "Debug").Should().OnlyContain(r => r.Contains("correlationId"));
+        output.WriteLine(string.Join(Environment.NewLine, logs.Select(r => $"{r["timestamp"]} {r["level"],-11} {Message(r)}")));
     }
 
     [Fact]

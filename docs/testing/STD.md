@@ -5,7 +5,7 @@
 | **Document** | Software Test Description (STD) |
 | **System** | TA9 Document Processing — Job Service · Processor Service · Audit Service |
 | **Test framework** | xUnit 2.9 · FluentAssertions 7 · NSubstitute · ASP.NET Core TestServer · Testcontainers (MongoDB 7) |
-| **Automated tests** | 278 test methods → **407 executions** (theories and dual-store contract suites expanded) |
+| **Automated tests** | 311 test methods → **440 executions** (theories and dual-store contract suites expanded) |
 | **Related documents** | `docs/hld/TA9-HLD.docx` (design) · `docs/installation/TA9-Installation-Guide.docx` (environment) · `README.md` |
 
 ## 1. Introduction
@@ -31,10 +31,10 @@ This document describes how the TA9 Document Processing System is verified. It l
 ### 2.1 Test levels
 | Level | What it verifies | How | Count (methods / executions) |
 |---|---|---|---|
-| **Unit** | Domain rules and application logic in isolation | Plain objects, in-memory stores, fakes, manual clock | 197 / 302 |
-| **Component** | A service's real pipeline: REST, WebSocket, SSE, middleware, DI, validation, error mapping | WebApplicationFactory / TestServer, real WebSocket clients | 52 / 55 |
+| **Unit** | Domain rules and application logic in isolation | Plain objects, in-memory stores, fakes, manual clock | 218 / 323 |
+| **Component** | A service's real pipeline: REST, WebSocket, SSE, middleware, DI, validation, error mapping | WebApplicationFactory / TestServer, real WebSocket clients, log capture; the Mongo log writer against a MongoDB container | 66 / 69 |
 | **Contract** | That every storage implementation behaves identically | Same abstract suite against InMemory and real MongoDB (Testcontainers) | 21 / 42 |
-| **Integration (E2E)** | The whole system working together, including failure scenarios and the performance requirement | Three services in-process, real WebSocket, MongoDB container | 5 / 5 |
+| **Integration (E2E)** | The whole system working together, including failure scenarios and the performance requirement | Three services in-process, real WebSocket, MongoDB container | 6 / 6 |
 | **Manual / system** | Deployed stack in Docker Desktop, API exploration, load and resilience | Smoke-test scripts, Postman collection, Swagger, curl, docker compose | §8 |
 
 ### 2.2 Techniques and test doubles
@@ -48,6 +48,7 @@ This document describes how the TA9 Document Processing System is verified. It l
 | **Fake processor / audit clients** | Scripting outcomes (accepted, busy, unreachable, rejected, 404) | `JobDispatcherTests`, `JobReconcilerTests` |
 | **Failing repositories** | Storage outage behavior (503, no ack, exceptions propagate) | `JobsApiStorageFailureTests`, `ProcessorEventsEndpointTests` |
 | **Exhaustive tables** | Every pair of job states checked against the designed lifecycle | `JobStateMachineTests` (36 cases) |
+| **Log capture** (`ListLogger<T>`, `CapturingLogWriter`) | Asserting what is logged: level, message, job id, correlation id, exception. `CapturingLogWriter` replaces only MongoDB behind the real Serilog pipeline | `JobDispatcherLoggingTests`, `JobsApiLoggingTests`, `ServiceLoggingPipelineTests` |
 | **Polling with timeout** (`Eventually`) | Waiting for asynchronous outcomes without fixed sleeps | API, WS and E2E tests |
 
 ### 2.3 Principles
@@ -77,17 +78,17 @@ dotnet test Ta9.sln --filter "FullyQualifiedName~JobDispatcherTests"          # 
 ## 4. Test summary
 | Test project | Classes | Test methods | Executions |
 |---|---|---|---|
-| Ta9.ServiceDefaults.Tests | 4 | 13 | 25 |
-| Ta9.ProcessorService.Tests | 15 | 104 | 126 |
-| Ta9.JobService.Tests | 20 | 145 | 234 |
-| Ta9.AuditService.Tests | 3 | 11 | 17 |
-| Ta9.IntegrationTests | 1 | 5 | 5 |
-| **Total** | **43** | **278** | **407** |
+| Ta9.ServiceDefaults.Tests | 8 | 34 | 46 |
+| Ta9.ProcessorService.Tests | 16 | 107 | 129 |
+| Ta9.JobService.Tests | 22 | 152 | 241 |
+| Ta9.AuditService.Tests | 4 | 12 | 18 |
+| Ta9.IntegrationTests | 1 | 6 | 6 |
+| **Total** | **51** | **311** | **440** |
 
 ### 4.1 Latest execution results
 | Run | Result |
 |---|---|
-| Automated suite — `dotnet test Ta9.sln` (Windows 11, Docker Desktop, 2026-10-26) | **404 passed, 0 failed, 0 skipped** (≈ 34 s) — before the 3 `MongoUnavailableTests` were added; re-run pending |
+| Automated suite — `dotnet test Ta9.sln` (Windows 11, Docker Desktop, 2026-10-26) | **407 passed, 0 failed, 0 skipped** (≈ 26 s, 2026-10-27) — before the 33 logging tests (§7, Logging & Observability) were added; re-run pending |
 | Docker Compose deployment — `docker compose ps` | All 4 containers **healthy** |
 | Smoke test — 1 job × 3 documents | **Passed** — Completed, 3/3 succeeded, audit entry recorded |
 | Load scenario — 10 jobs × 1,000 documents (`smoke-test.ps1 -Jobs 10 -Documents 1000`) | **Passed** — every job shown Completed with 1000/1000 succeeded (console output was truncated after the 7th job) |
@@ -118,11 +119,11 @@ Requirements are taken from the home assignment (§3–§7 and the bonus §12).
 | R14 | Storage failure handling | `JobsApiStorageFailureTests`, `MongoUnavailableTests`, `ProcessorEventsEndpointTests`, `ProcessorEventHandlerTests` | MT-09 |
 | R15 | Cancellation | `ProcessingJobTests`, `ProcessingServiceTests`, `JobManagerTests`, `JobDispatcherTests`, `JobsApiTests`, `EndToEndTests` | MT-06 |
 | R16 | Real-time status for clients (SSE) | `JobEventsApiTests`, `InMemoryJobUpdateBroadcasterTests`, `BroadcastingJobRepositoryTests` | MT-10 |
-| R17 | Logging & observability (correlation id, health checks) | `CorrelationTests`, `CorrelationIdMiddlewareTests`, `CorrelationIdHandlerTests`, `JobsApiTests`, `ProcessApiTests`, `AuditApiTests` | MT-01 |
+| R17 | Logging & observability: console + MongoDB, Debug/Information/Error levels, correlation id, health checks | `BatchingLogSinkTests`, `LogRecordTests`, `ServiceLoggingPipelineTests`, `MongoLogBatchWriterTests`, `JobDispatcherLoggingTests`, `JobRunnerLoggingTests`, `JobsApiLoggingTests`, `AuditApiLoggingTests`, `EndToEndTests`, `CorrelationTests`, `CorrelationIdMiddlewareTests`, `CorrelationIdHandlerTests` | MT-01, MT-11 |
 | R18 | Bonus: Audit Service `POST /api/audit`, `GET /api/audit/{jobId}` | `AuditApiTests`, `AuditRepositoryContract`, `AuditPublisherTests`, `HttpAuditClientTests`, `EndToEndTests` | MT-02 |
 
 ## 7. Automated test case catalog
-Section-specific subsets of this catalog, with the same IDs, appear in the topic documents: `docs/concurrency/TA9-Concurrency-Performance.docx` (§4 Concurrency & Performance, chapter 7) `docs/websocket/TA9-WebSocket-Behavior.docx` (WebSocket disconnect/reconnect, chapter 5) and `docs/storage/TA9-Storage.docx` (§6 Storage, chapter 7).
+Section-specific subsets of this catalog, with the same IDs, appear in the topic documents: `docs/concurrency/TA9-Concurrency-Performance.docx` (§4 Concurrency & Performance, chapter 7) `docs/websocket/TA9-WebSocket-Behavior.docx` (WebSocket disconnect/reconnect, chapter 5) `docs/storage/TA9-Storage.docx` (§6 Storage, chapter 7) and `docs/logging/TA9-Logging-Observability.docx` (§7 Logging & Observability, chapter 5).
 
 Each test case title is the test method name. ID prefixes: **SD** shared infrastructure, **PS** Processor Service, **JS** Job Service, **AS** Audit Service, **E2E** cross-service. *Theory ×N* runs N data rows; *×2 stores* runs once against InMemory and once against MongoDB.
 
@@ -172,6 +173,59 @@ Exponential growth, cap and ±20% jitter (shared by WS reconnect and dispatch re
 |---|---|---|
 | SD-012 | Grows exponentially up to the cap with jitter | Theory ×6 |
 | SD-013 | Jitter spreads retries | Fact |
+
+#### BatchingLogSinkTests
+**Level:** Unit · **Under test:** BatchingLogSink
+
+Bounded, non-blocking buffer; batches by size and time; flush on dispose; drops counted and reported; write failures isolated.
+
+| ID | Test case | Kind |
+|---|---|---|
+| SD-014 | Writes events in order in batches no larger than the batch size | Fact |
+| SD-015 | Flushes a partial batch after the flush interval | Fact |
+| SD-016 | Dispose writes pending events before returning | Fact |
+| SD-017 | Full buffer drops events without blocking and reports the count | Fact |
+| SD-018 | Failed write is reported and later events still reach the store | Fact |
+| SD-019 | Emit after dispose is counted as dropped and does not throw | Fact |
+
+#### LogRecordTests
+**Level:** Unit · **Under test:** LogRecord, MongoLogBatchWriter.ToBson
+
+Mapping of a log event to the stored record: level, message, ids promoted, truncation, BSON shape.
+
+| ID | Test case | Kind |
+|---|---|---|
+| SD-020 | Maps level rendered message service host and exception | Fact |
+| SD-021 | Renders string values without quotes and other values as serilog does | Fact |
+| SD-022 | Promotes correlation and job ids and keeps other properties as text | Fact |
+| SD-023 | Truncates oversized message and exception | Fact |
+| SD-024 | Bson document has indexed fields and safe property names | Fact |
+
+#### ServiceLoggingPipelineTests
+**Level:** Component · **Under test:** AddServiceDefaults logging (Serilog → filters → BatchingLogSink)
+
+Real hosting setup with the database replaced by a capturing writer: levels, correlation id, unhandled errors, startup lines, disable switch, flush on stop.
+
+| ID | Test case | Kind |
+|---|---|---|
+| SD-025 | Debug information and error are stored with service and correlation id | Fact |
+| SD-026 | Mongo minimum level filters what is stored | Fact |
+| SD-027 | Unhandled endpoint exception is stored as an error with the stack trace | Fact |
+| SD-028 | Startup logs where logs go and that the service started | Fact |
+| SD-029 | Disabled mongo logging stores nothing | Fact |
+| SD-030 | Stopping the host flushes buffered records | Fact |
+
+#### MongoLogBatchWriterTests
+**Level:** Component · **Under test:** MongoLogBatchWriter · requires Docker (`Category=Integration`)
+
+Real MongoDB: query by job id, TTL retention index and lookup indexes, retention change, fail fast when unreachable.
+
+| ID | Test case | Kind |
+|---|---|---|
+| SD-031 | Stores records that can be queried by job id | Fact |
+| SD-032 | Creates the retention ttl index and the lookup indexes | Fact |
+| SD-033 | Changing the retention updates the existing ttl index | Fact |
+| SD-034 | Unreachable database fails fast | Fact |
 
 ### 7.2 Processor Service (Ta9.ProcessorService.Tests)
 
@@ -398,6 +452,17 @@ Real WebSocket against an in-memory fake Job Service: ordered delivery, bufferin
 | PS-102 | Unknown job returns 404 | Theory ×2 |
 | PS-103 | List returns known jobs | Fact |
 | PS-104 | Liveness endpoint is healthy | Fact |
+
+#### JobRunnerLoggingTests
+**Level:** Unit · **Under test:** JobRunner (logging)
+
+Flow at Information, progress at Debug, a failing document at Warning, a failed job at Error; job id on every line.
+
+| ID | Test case | Kind |
+|---|---|---|
+| PS-105 | Successful job logs start and completion with the job id | Fact |
+| PS-106 | Failing document is a warning with the exception and the job still completes | Fact |
+| PS-107 | Job where every document fails is logged as an error | Fact |
 
 ### 7.3 Job Service (Ta9.JobService.Tests)
 
@@ -680,6 +745,7 @@ A storage-neutral `StorageUnavailableException` surfaces as a retryable 503 Prob
 | ID | Test case | Kind |
 |---|---|---|
 | JS-136 | Storage timeout returns 503 problem | Fact |
+| JS-152 | Storage outage is logged as an error with the correlation id | Fact |
 
 #### ProcessorEventsEndpointTests
 **Level:** Component · **Under test:** WebSocket endpoint
@@ -705,6 +771,28 @@ An unreachable MongoDB (closed port, 300 ms server-selection timeout, no Docker)
 | JS-143 | Job repository reads and writes report storage unavailable | Fact |
 | JS-144 | Failed update keeps the version token unchanged | Fact |
 | JS-145 | Document repository reports storage unavailable | Fact |
+
+#### JobDispatcherLoggingTests
+**Level:** Unit · **Under test:** JobDispatcher (logging)
+
+Dispatch flow at Information, details at Debug, unreachable → Warning then Error, rejected and unexpected failures at Error.
+
+| ID | Test case | Kind |
+|---|---|---|
+| JS-146 | Accepted dispatch logs the flow at information and details at debug | Fact |
+| JS-147 | Unreachable processor logs warnings then an error when giving up | Fact |
+| JS-148 | Rejected payload is logged as an error | Fact |
+| JS-149 | Unexpected failure is logged as an error with the exception | Fact |
+
+#### JobsApiLoggingTests
+**Level:** Component · **Under test:** Job Service logging pipeline
+
+What an API call stores: Information + Debug with job id and correlation id; client errors are not logged as errors.
+
+| ID | Test case | Kind |
+|---|---|---|
+| JS-150 | Creating a job stores info and debug records with job id and correlation id | Fact |
+| JS-151 | Invalid request is logged without error level | Fact |
 
 ### 7.4 Audit Service (Ta9.AuditService.Tests)
 
@@ -743,12 +831,21 @@ Same suite against InMemory and MongoDB: first write wins, unknown job.
 | AS-010 | First write wins | Fact · ×2 stores |
 | AS-011 | Unknown job returns null | Fact · ×2 stores |
 
+#### AuditApiLoggingTests
+**Level:** Component · **Under test:** Audit Service logging pipeline
+
+Recording logs Information with the job id; a duplicate logs Debug.
+
+| ID | Test case | Kind |
+|---|---|---|
+| AS-012 | Recording logs information and a duplicate logs debug | Fact |
+
 ### 7.5 Cross-service integration (Ta9.IntegrationTests)
 
 #### EndToEndTests
 **Level:** Integration (E2E) · **Under test:** Whole system · requires Docker (`Category=Integration`)
 
-Job, Processor and Audit services in-process over REST + real WebSocket + MongoDB: full flow, 10 × 1,000 documents, unreachable processor, processor restart, cancellation.
+Job, Processor and Audit services in-process over REST + real WebSocket + MongoDB: full flow, 10 × 1,000 documents, unreachable processor, processor restart, cancellation, logs of all three services in MongoDB.
 
 | ID | Test case | Kind |
 |---|---|---|
@@ -757,6 +854,7 @@ Job, Processor and Audit services in-process over REST + real WebSocket + MongoD
 | E2E-003 | Unreachable processor fails the job after retries | Fact |
 | E2E-004 | Job lost by a processor restart is redispatched and completes | Fact |
 | E2E-005 | Cancelling a running job stops it on the processor | Fact |
+| E2E-006 | Job flow is logged to mongodb by all three services under one correlation id | Fact |
 
 ## 8. Manual and system test procedures
 Executed against the stack deployed with Docker Desktop (Installation Guide §4).
@@ -773,6 +871,7 @@ Executed against the stack deployed with Docker Desktop (Installation Guide §4)
 | MT-08 | Processor restart mid-job | MT-01 passed | 1) Start the 10 × 1,000 load 2) `docker compose restart processor-service` while jobs are Processing 3) Watch `GET /api/jobs?status=Processing` | Within ~60–90 s the reconciler redispatches lost jobs; all jobs end Completed | Not yet executed |
 | MT-09 | Storage outage | MT-01 passed | 1) `docker compose stop mongo` 2) `GET /api/jobs` and `/health/ready` on :5001 3) `docker compose start mongo` | 503 *Storage unavailable* ProblemDetails within ~5 s; readiness Unhealthy; service recovers after Mongo starts | Not yet executed |
 | MT-10 | Live status stream (SSE) | MT-01 passed | 1) Create a job 2) `curl.exe -N http://localhost:5001/api/jobs/<id>/events` | `event: status` lines: snapshot, then Processing with progress, then Completed; stream closes | Not yet executed |
+| MT-11 | Logs in console and MongoDB | MT-02 passed | 1) `docker compose logs --tail 50 job-service processor-service` 2) `docker exec -it ta9-mongo-1 mongosh ta9_logs --eval "db.logs.find({jobId:'<id>'}).sort({timestamp:1})"` with the job id from MT-02 3) `db.logs.find({level:'Error'})` | Console shows the flow (Information); MongoDB holds Debug + Information records of all three services for the job with one `correlationId`; TTL index `ttl_timestamp` exists | Not yet executed |
 
 ## 9. Defects found by testing
 Defects detected by the automated tests during development; all fixed before submission.

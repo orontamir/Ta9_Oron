@@ -40,6 +40,7 @@ public sealed class HttpProcessorClient(
         try
         {
             using var response = await Client().PostAsJsonAsync("api/process", new ProcessJobRequest(jobId, documents), Json, cancellationToken);
+            logger.LogDebug("POST api/process for job {JobId} returned {StatusCode}", jobId, (int)response.StatusCode);
             switch (response.StatusCode)
             {
                 case HttpStatusCode.Accepted or HttpStatusCode.OK:
@@ -55,6 +56,7 @@ public sealed class HttpProcessorClient(
         }
         catch (HttpRequestException ex)
         {
+            logger.LogDebug(ex, "POST api/process for job {JobId} failed: processor unreachable", jobId);
             return DispatchResult.Unreachable(ex.Message);
         }
         catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
