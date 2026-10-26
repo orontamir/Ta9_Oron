@@ -113,7 +113,7 @@ conc = f"""## 7. Tests for this section
 
 All automated tests listed here passed in the latest full run (404 / 404).
 """
-replace_section(ROOT / "docs/concurrency/CONCURRENCY.md", "## 7. Verification", None, conc)
+replace_section(ROOT / "docs/concurrency/CONCURRENCY.md", "## 7. Tests for this section", None, conc)
 
 # ------------------------------------------------------------------ §5 WebSocket disconnect / reconnect
 WEBSOCKET = [
@@ -182,4 +182,65 @@ All automated tests listed here passed in the latest full run (404 / 404).
 Status in the STD: *Not yet executed*.
 """
 replace_section(ROOT / "docs/websocket/WEBSOCKET.md", "## 5. Tests", "## 6. Configuration", ws)
-print("concurrency + websocket test chapters written")
+
+# ------------------------------------------------------------------ §6 Storage
+def u(*names):
+    return [n.replace(" ", "_") for n in names]
+
+
+STORAGE = [
+    ("JobRepositoryContract", u("Insert then get round trips every field", "Get unknown job returns null", "Update persists changes and increments version",
+                                "Update with a stale version is rejected", "Changes to a loaded job are not visible until saved", "Concurrent updates never lose a write",
+                                "List filters orders newest first and pages", "Claim leases the due pending job until the lease expires",
+                                "Claim skips jobs that are not due or not pending", "Claim takes the longest waiting job first",
+                                "Concurrent claims never hand out the same job twice", "Stale query returns only silent active jobs oldest first",
+                                "Unpublished query returns finished jobs not yet audited", "Delete removes the job once")),
+    ("JobDocumentRepositoryContract", u("Returns documents of one job ordered by index", "Saving results is idempotent", "Results are paged by index",
+                                        "Results for unknown documents are ignored", "Delete removes only the given job")),
+    ("AuditRepositoryContract", u("First write wins", "Unknown job returns null")),
+    ("JobRepositoryExtensionsTests", u("Applies the mutation and saves", "Reports not found", "Does not write when the mutation declines",
+                                       "Reloads and retries on conflict", "Gives up after max attempts")),
+    ("BroadcastingJobRepositoryTests", u("Successful update is published with the new version", "Rejected update is not published",
+                                         "Dispatch claims are not published")),
+    ("InMemoryProcessingJobStoreTests", u("Rejects duplicate job id", "Removes only finished jobs older than cutoff")),
+    ("MongoUnavailableTests", u("Job repository reads and writes report storage unavailable", "Failed update keeps the version token unchanged",
+                                "Document repository reports storage unavailable")),
+    ("JobsApiStorageFailureTests", u("Storage timeout returns 503 problem")),
+    ("ProcessorEventsEndpointTests", u("Event that cannot be stored is not acknowledged")),
+    ("ProcessorEventHandlerTests", u("Storage failure propagates so the event is not acknowledged")),
+    ("JobsApiTests", u("Readiness reports storage health")),
+    ("AuditApiTests", u("Readiness reports storage")),
+]
+storage = f"""## 7. Tests for this section
+
+{INTRO.format(what='§6 Storage')}
+
+### 7.1 What is verified
+
+| Claim in this document | Verified by |
+|---|---|
+| InMemory and MongoDB stores behave identically (same suite, ×2 stores) | `JobRepositoryContract`, `JobDocumentRepositoryContract`, `AuditRepositoryContract` |
+| Optimistic concurrency, atomic claim with lease, first write wins — on both stores | Concurrency cases of the contract suites |
+| Callers are store-agnostic: load → mutate → save with retries | `JobRepositoryExtensionsTests` |
+| A decorator adds behavior to any store | `BroadcastingJobRepositoryTests` |
+| Processor work state is bounded in time (TTL eviction) | `InMemoryProcessingJobStoreTests` |
+| Driver errors become `StorageUnavailableException`; version token kept on failure | `MongoUnavailableTests` (no Docker needed) |
+| Storage outage → 503 on REST, no ack on WebSocket, readiness reflects storage | `JobsApiStorageFailureTests`, `ProcessorEventsEndpointTests`, `ProcessorEventHandlerTests`, `JobsApiTests`, `AuditApiTests` |
+| Mongo GUID encoding defect stays fixed | Contract suites on MongoDB (STD defect **D-01**) |
+
+### 7.2 Automated tests
+
+{table(catalog, STORAGE)}
+
+Contract suites against MongoDB need Docker (`Category=Integration`, Testcontainers). All tests listed here passed in the latest full run (404 / 404), except `MongoUnavailableTests` (JS-143..145), added afterwards; re-run pending.
+
+### 7.3 Manual tests
+
+| STD ID | Procedure | Expected result | Status |
+|---|---|---|---|
+| MT-01 | `docker compose up -d`; open `/health/ready` on :5001 and :5003 | `Healthy` — MongoDB reachable | Passed (2026-10-26) |
+| MT-09 | `docker compose stop mongo`; `GET /api/jobs` and `/health/ready` on :5001; `docker compose start mongo` | 503 *Storage unavailable* within ~5 s; readiness Unhealthy; recovers after Mongo starts | Not yet executed |
+"""
+replace_section(ROOT / "docs/storage/STORAGE.md", "## 7. Tests for this section", None, storage)
+
+print("concurrency + websocket + storage test chapters written")

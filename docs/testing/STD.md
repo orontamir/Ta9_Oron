@@ -115,14 +115,14 @@ Requirements are taken from the home assignment (§3–§7 and the bonus §12).
 | R11 | Lost events / processor restart recovery | `JobReconcilerTests`, `JobRunnerTests`, `EndToEndTests` | MT-08 |
 | R12 | Concurrent updates never lose writes | `JobRepositoryContract`, `JobRepositoryExtensionsTests` | — |
 | R13 | Storage replaceable (persistent or in-memory) | `JobRepositoryContract`, `JobDocumentRepositoryContract`, `AuditRepositoryContract` | MT-01 |
-| R14 | Storage failure handling | `JobsApiStorageFailureTests`, `ProcessorEventsEndpointTests`, `ProcessorEventHandlerTests` | MT-09 |
+| R14 | Storage failure handling | `JobsApiStorageFailureTests`, `MongoUnavailableTests`, `ProcessorEventsEndpointTests`, `ProcessorEventHandlerTests` | MT-09 |
 | R15 | Cancellation | `ProcessingJobTests`, `ProcessingServiceTests`, `JobManagerTests`, `JobDispatcherTests`, `JobsApiTests`, `EndToEndTests` | MT-06 |
 | R16 | Real-time status for clients (SSE) | `JobEventsApiTests`, `InMemoryJobUpdateBroadcasterTests`, `BroadcastingJobRepositoryTests` | MT-10 |
 | R17 | Logging & observability (correlation id, health checks) | `CorrelationTests`, `CorrelationIdMiddlewareTests`, `CorrelationIdHandlerTests`, `JobsApiTests`, `ProcessApiTests`, `AuditApiTests` | MT-01 |
 | R18 | Bonus: Audit Service `POST /api/audit`, `GET /api/audit/{jobId}` | `AuditApiTests`, `AuditRepositoryContract`, `AuditPublisherTests`, `HttpAuditClientTests`, `EndToEndTests` | MT-02 |
 
 ## 7. Automated test case catalog
-Section-specific subsets of this catalog, with the same IDs, appear in the topic documents: `docs/concurrency/TA9-Concurrency-Performance.docx` (§4 Concurrency & Performance, chapter 7) and `docs/websocket/TA9-WebSocket-Behavior.docx` (WebSocket disconnect/reconnect, chapter 5).
+Section-specific subsets of this catalog, with the same IDs, appear in the topic documents: `docs/concurrency/TA9-Concurrency-Performance.docx` (§4 Concurrency & Performance, chapter 7) `docs/websocket/TA9-WebSocket-Behavior.docx` (WebSocket disconnect/reconnect, chapter 5) and `docs/storage/TA9-Storage.docx` (§6 Storage, chapter 7).
 
 Each test case title is the test method name. ID prefixes: **SD** shared infrastructure, **PS** Processor Service, **JS** Job Service, **AS** Audit Service, **E2E** cross-service. *Theory ×N* runs N data rows; *×2 stores* runs once against InMemory and once against MongoDB.
 

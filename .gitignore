@@ -16,3 +16,4 @@ nuget.config
 .github/copilot-instructions.md
 artifacts/
 node_modules/
+docs/hld/images/rendered/
