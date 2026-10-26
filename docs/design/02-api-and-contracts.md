@@ -64,13 +64,21 @@ POST /api/jobs
 
 ### SSE
 
-```
-event: status
-data: {"jobId":"…","status":"Processing","processedDocuments":300,"totalDocuments":1000}
+Each event's `data` is the same `JobResponse` as `GET /api/jobs/{id}`. The `id` is the job version, which is monotonic. A `: keep-alive` comment is sent every 15s while idle, and the stream ends after the terminal state.
 
-event: status
-data: {"jobId":"…","status":"Completed",…}
 ```
+id: 3
+event: status
+data: {"id":"…","status":"Processing","processedDocuments":300,"totalDocuments":1000,"progressPercent":30.0,…}
+
+: keep-alive
+
+id: 7
+event: status
+data: {"id":"…","status":"Completed",…}
+```
+
+**Implementation:** a repository decorator publishes every successful job write to an in-process broadcaster. Each subscriber has a bounded (16) drop-oldest buffer, so a slow client never blocks writers and always ends with the latest snapshot. The endpoint subscribes **before** reading the snapshot and skips updates whose version is not newer, so nothing is missed or duplicated.
 
 ## 2. Processor Service (`:5002`)
 

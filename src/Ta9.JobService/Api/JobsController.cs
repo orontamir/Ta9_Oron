@@ -7,7 +7,7 @@ namespace Ta9.JobService.Api;
 
 [ApiController]
 [Route("api/jobs")]
-public sealed class JobsController(JobManager jobs) : ControllerBase
+public sealed class JobsController(JobManager jobs, JobEventStream eventStream) : ControllerBase
 {
     public const long MaxRequestBytes = 10 * 1024 * 1024;
 
@@ -80,6 +80,19 @@ public sealed class JobsController(JobManager jobs) : ControllerBase
                 title: "Results not available",
                 detail: $"Job {id} is {results.Job!.Status}; results are available once it is Completed.")
         };
+    }
+
+    /// <summary>
+    /// Server-Sent Events: the current state immediately, then every change (status, progress) until the job
+    /// finishes. Try it with <c>curl -N http://localhost:5001/api/jobs/{id}/events</c>.
+    /// </summary>
+    [HttpGet("{id:guid}/events")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Events(Guid id, CancellationToken cancellationToken)
+    {
+        var found = await eventStream.StreamAsync(id, Response, cancellationToken);
+        return found ? new EmptyResult() : JobNotFound(id);
     }
 
     /// <summary>Cancels a pending, queued or processing job. Idempotent.</summary>

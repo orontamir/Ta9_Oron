@@ -39,9 +39,11 @@ public static class StorageServiceCollectionExtensions
         services.AddSingleton<InMemoryJobRepository>();
         services.AddSingleton<InMemoryJobDocumentRepository>();
 
-        services.AddSingleton<IJobRepository>(sp => UseInMemory(sp)
-            ? sp.GetRequiredService<InMemoryJobRepository>()
-            : sp.GetRequiredService<MongoJobRepository>());
+        // Every job write is published to live subscribers (SSE) by a decorator around the chosen store.
+        services.AddSingleton<IJobUpdateBroadcaster, InMemoryJobUpdateBroadcaster>();
+        services.AddSingleton<IJobRepository>(sp => new BroadcastingJobRepository(
+            UseInMemory(sp) ? sp.GetRequiredService<InMemoryJobRepository>() : sp.GetRequiredService<MongoJobRepository>(),
+            sp.GetRequiredService<IJobUpdateBroadcaster>()));
         services.AddSingleton<IJobDocumentRepository>(sp => UseInMemory(sp)
             ? sp.GetRequiredService<InMemoryJobDocumentRepository>()
             : sp.GetRequiredService<MongoJobDocumentRepository>());

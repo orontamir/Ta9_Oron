@@ -17,6 +17,7 @@ public class Program
         builder.Services.AddSingleton<JobManager>();
         builder.Services.AddSingleton<ProcessorEventHandler>();
         builder.Services.AddSingleton<ProcessorEventsEndpoint>();
+        builder.Services.AddSingleton<JobEventStream>();
         builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 
         builder.Services
