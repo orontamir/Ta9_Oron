@@ -1,0 +1,17 @@
+{
+  "name": "ta9-docs-tools",
+  "private": true,
+  "description": "Renders the draw.io diagrams to PNG and converts the Markdown documents to Word.",
+  "scripts": {
+    "render": "node render-drawio.js ../../docs/hld/diagrams/ta9-hld.drawio ../../docs/hld/images/rendered",
+    "hld": "node md2docx.js ../../docs/hld/HLD.md ../../docs/hld/TA9-HLD.docx \"High-Level Design\"",
+    "install-guide": "node md2docx.js ../../docs/installation/INSTALLATION.md ../../docs/installation/TA9-Installation-Guide.docx \"Installation Guide\" \"TA9 Real-Time Document Processing System\" \"TA9 Document Processing — Installation Guide\"",
+    "std": "node md2docx.js ../../docs/testing/STD.md ../../docs/testing/TA9-STD.docx \"Software Test Description (STD)\" \"TA9 Real-Time Document Processing System\" \"TA9 Document Processing — STD\"",
+    "concurrency": "node md2docx.js ../../docs/concurrency/CONCURRENCY.md ../../docs/concurrency/TA9-Concurrency-Performance.docx \"Concurrency & Performance\" \"TA9 Real-Time Document Processing System\" \"TA9 Document Processing — Concurrency & Performance\""
+  },
+  "dependencies": {
+    "docx": "9.14.0",
+    "mxgraph": "4.2.2",
+    "puppeteer-core": "23.6.0"
+  }
+}

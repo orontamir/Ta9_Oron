@@ -149,6 +149,8 @@ Terminal states accept nothing, so duplicates, replays and late events are no-op
 ## 9. Non-functional design
 
 ### 9.1 Concurrency and performance
+Full analysis with diagrams, advantages, limitations and alternatives: [`../concurrency/CONCURRENCY.md`](../concurrency/CONCURRENCY.md).
+
 - **Two explicit bounds:** at most 10 concurrent jobs × 2 documents = **20 CPU work items**, and at most 100 jobs queued. Above that, 503 + `Retry-After` backpressure flows back to the dispatcher.
 - **No blocked threads:** workers `await` the channel and all I/O is async. Only the CPU-bound analysis runs on pool threads.
 - **Fairness:** each job gets its own small parallelism slice, so large jobs never starve small ones.

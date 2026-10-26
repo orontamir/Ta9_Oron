@@ -15,3 +15,4 @@ nuget.config
 *.bundle
 .github/copilot-instructions.md
 artifacts/
+node_modules/
