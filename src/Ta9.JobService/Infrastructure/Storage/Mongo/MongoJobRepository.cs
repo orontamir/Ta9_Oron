@@ -78,6 +78,14 @@ public sealed class MongoJobRepository : IJobRepository
             },
             cancellationToken);
 
+    public async Task<IReadOnlyList<Job>> FindStaleActiveAsync(DateTimeOffset updatedBefore, int limit, CancellationToken cancellationToken) =>
+        await _jobs.Find(Builders<Job>.Filter.And(
+                Builders<Job>.Filter.In(job => job.Status, new[] { JobStatus.Queued, JobStatus.Processing }),
+                Builders<Job>.Filter.Lt(job => job.UpdatedAt, updatedBefore)))
+            .SortBy(job => job.UpdatedAt)
+            .Limit(limit)
+            .ToListAsync(cancellationToken);
+
     public Task EnsureIndexesAsync(CancellationToken cancellationToken) =>
         _jobs.Indexes.CreateManyAsync(
         [

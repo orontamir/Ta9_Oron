@@ -7,11 +7,15 @@ namespace Ta9.JobService;
 
 public static class ProcessorIntegrationServiceCollectionExtensions
 {
-    /// <summary>Processor REST client and the background dispatcher.</summary>
+    /// <summary>Processor REST client, the background dispatcher and the reconciler.</summary>
     public static IServiceCollection AddProcessorIntegration(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<ProcessorClientOptions>()
             .Bind(configuration.GetSection(ProcessorClientOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+        services.AddOptions<ReconcileOptions>()
+            .Bind(configuration.GetSection(ReconcileOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
         services.AddOptions<DispatchOptions>()
@@ -31,6 +35,8 @@ public static class ProcessorIntegrationServiceCollectionExtensions
         services.AddSingleton<IJobDispatchSignal, JobDispatchSignal>();
         services.AddSingleton<JobDispatcher>();
         services.AddHostedService(sp => sp.GetRequiredService<JobDispatcher>());
+        services.AddSingleton<JobReconciler>();
+        services.AddHostedService(sp => sp.GetRequiredService<JobReconciler>());
 
         return services;
     }

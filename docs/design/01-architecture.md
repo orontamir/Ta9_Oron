@@ -113,10 +113,11 @@ The dispatcher retries with exponential backoff and jitter (2s → 60s cap). Aft
 
 ### 4.3 Lost events or a processor restart
 
-The reconciler runs every 30s. It picks up jobs in `Queued`/`Processing` with no update for 60s and calls `GET /api/process/{id}`:
+The reconciler runs every 30s. It picks up jobs in `Queued`/`Processing` with no update for 60s and calls `GET /api/process/{id}`. A snapshot is applied through the **same** handler as the WS events, so both paths follow identical rules:
 - **Completed/Failed:** apply the result, using the same handler as the WS event.
-- **Still running:** touch `lastSeenAt`.
-- **404:** the processor lost the job. Move it back to `Pending` (`redispatchCount++`). After 3 redispatches the job becomes `Failed`.
+- **Still running:** refresh progress and `updatedAt` (liveness).
+- **404:** the processor lost the job. Move it back to `Pending` (`redispatchCount++`) and wake the dispatcher. After 3 redispatches the job becomes `Failed`. The decision is re-checked under optimistic concurrency, so an event that arrives in the meantime wins.
+- **Processor unreachable:** leave the job untouched; it is not the job's fault.
 
 ## 5. Code structure
 

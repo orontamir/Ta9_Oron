@@ -238,6 +238,7 @@ public sealed class JobsApiStorageFailureTests : IClassFixture<JobServiceFactory
         public Task<bool> TryUpdateAsync(Job job, CancellationToken ct) => throw Down();
         public Task<bool> DeleteAsync(Guid id, CancellationToken ct) => throw Down();
         public Task<Job?> TryClaimNextForDispatchAsync(DateTimeOffset now, DateTimeOffset leaseUntil, CancellationToken ct) => throw Down();
+        public Task<IReadOnlyList<Job>> FindStaleActiveAsync(DateTimeOffset updatedBefore, int limit, CancellationToken ct) => throw Down();
     }
 
     private readonly HttpClient _client;

@@ -129,6 +129,18 @@ public sealed class Job
         LeaseUntil = null;
     });
 
+    /// <summary>Records that the job is known to be alive (used by the reconciler) without changing its state.</summary>
+    public bool Touch(DateTimeOffset now)
+    {
+        if (IsTerminal)
+        {
+            return false;
+        }
+
+        UpdatedAt = now;
+        return true;
+    }
+
     public bool IsTerminal => JobStateMachine.IsTerminal(Status);
 
     /// <summary>Shallow copy; all members are values or immutable records.</summary>

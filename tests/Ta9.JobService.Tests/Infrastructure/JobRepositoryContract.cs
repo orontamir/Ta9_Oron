@@ -171,6 +171,25 @@ public abstract class JobRepositoryContract
     }
 
     [Fact]
+    public async Task Stale_query_returns_only_silent_active_jobs_oldest_first()
+    {
+        var oldProcessing = TestJobs.InStatus(JobStatus.Processing, TestJobs.T0);
+        var olderQueued = TestJobs.InStatus(JobStatus.Queued, TestJobs.T0.AddSeconds(-30));
+        var recentProcessing = TestJobs.InStatus(JobStatus.Processing, TestJobs.T0.AddMinutes(5));
+        var oldPending = TestJobs.InStatus(JobStatus.Pending, TestJobs.T0);
+        var oldCompleted = TestJobs.InStatus(JobStatus.Completed, TestJobs.T0);
+        foreach (var job in new[] { oldProcessing, olderQueued, recentProcessing, oldPending, oldCompleted })
+        {
+            await Jobs.InsertAsync(job, None);
+        }
+
+        var stale = await Jobs.FindStaleActiveAsync(TestJobs.T0.AddMinutes(1), limit: 10, None);
+
+        stale.Select(j => j.Id).Should().Equal(olderQueued.Id, oldProcessing.Id);
+        (await Jobs.FindStaleActiveAsync(TestJobs.T0.AddMinutes(1), limit: 1, None)).Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task Delete_removes_the_job_once()
     {
         var job = TestJobs.New();

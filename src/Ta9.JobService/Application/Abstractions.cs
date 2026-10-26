@@ -30,6 +30,9 @@ public interface IJobRepository
     /// by setting <see cref="Job.LeaseUntil"/>. Returns null when nothing is due. Two concurrent callers never get the same job.
     /// </summary>
     Task<Job?> TryClaimNextForDispatchAsync(DateTimeOffset now, DateTimeOffset leaseUntil, CancellationToken cancellationToken);
+
+    /// <summary>Queued/Processing jobs not updated since <paramref name="updatedBefore"/>, oldest first.</summary>
+    Task<IReadOnlyList<Job>> FindStaleActiveAsync(DateTimeOffset updatedBefore, int limit, CancellationToken cancellationToken);
 }
 
 public interface IJobDocumentRepository

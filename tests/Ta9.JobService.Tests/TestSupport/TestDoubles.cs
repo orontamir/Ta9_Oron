@@ -9,12 +9,14 @@ public sealed class FakeProcessorClient : IProcessorClient
 {
     private readonly ConcurrentQueue<(Guid JobId, IReadOnlyList<ProcessDocumentRequest> Documents)> _submitted = new();
     private readonly ConcurrentQueue<Guid> _cancelled = new();
+    private readonly ConcurrentQueue<Guid> _lookups = new();
 
     public Func<Guid, Task<DispatchResult>> OnSubmit { get; set; } = _ => Task.FromResult(DispatchResult.Accepted());
     public Func<Guid, ProcessorLookup> OnGet { get; set; } = _ => new ProcessorLookup(LookupOutcome.NotFound);
 
     public IReadOnlyList<(Guid JobId, IReadOnlyList<ProcessDocumentRequest> Documents)> Submitted => _submitted.ToList();
     public IReadOnlyList<Guid> Cancelled => _cancelled.ToList();
+    public IReadOnlyList<Guid> Lookups => _lookups.ToList();
 
     public async Task<DispatchResult> SubmitAsync(Guid jobId, IReadOnlyList<ProcessDocumentRequest> documents, CancellationToken cancellationToken)
     {
@@ -22,13 +24,28 @@ public sealed class FakeProcessorClient : IProcessorClient
         return await OnSubmit(jobId);
     }
 
-    public Task<ProcessorLookup> GetAsync(Guid jobId, CancellationToken cancellationToken) => Task.FromResult(OnGet(jobId));
+    public Task<ProcessorLookup> GetAsync(Guid jobId, CancellationToken cancellationToken)
+    {
+        _lookups.Enqueue(jobId);
+        return Task.FromResult(OnGet(jobId));
+    }
 
     public Task<bool> CancelAsync(Guid jobId, CancellationToken cancellationToken)
     {
         _cancelled.Enqueue(jobId);
         return Task.FromResult(true);
     }
+}
+
+public sealed class RecordingDispatchSignal : IJobDispatchSignal
+{
+    private int _notifications;
+
+    public int Notifications => Volatile.Read(ref _notifications);
+
+    public void Notify() => Interlocked.Increment(ref _notifications);
+
+    public Task WaitAsync(TimeSpan timeout, CancellationToken cancellationToken) => Task.Delay(timeout, cancellationToken);
 }
 
 /// <summary>Deterministic clock: time only moves when the test calls <see cref="Advance"/>.</summary>

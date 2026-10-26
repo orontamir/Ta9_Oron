@@ -60,6 +60,14 @@ public sealed class InMemoryJobRepository : IJobRepository
     public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken) =>
         Task.FromResult(_jobs.TryRemove(id, out _));
 
+    public Task<IReadOnlyList<Job>> FindStaleActiveAsync(DateTimeOffset updatedBefore, int limit, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<Job>>(_jobs.Values
+            .Where(job => job.Status is JobStatus.Queued or JobStatus.Processing && job.UpdatedAt < updatedBefore)
+            .OrderBy(job => job.UpdatedAt)
+            .Take(limit)
+            .Select(job => job.Clone())
+            .ToList());
+
     public Task<Job?> TryClaimNextForDispatchAsync(DateTimeOffset now, DateTimeOffset leaseUntil, CancellationToken cancellationToken)
     {
         lock (_writeGate)
