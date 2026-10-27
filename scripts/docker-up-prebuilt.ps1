@@ -20,7 +20,7 @@ try {
     try {
         npm ci --no-audit --no-fund
         if ($LASTEXITCODE -ne 0) { throw "npm ci failed (Node.js 18.13+ or 20.9+ is required for the prebuilt path)" }
-        npx ng build --configuration production
+        npm run build -- --configuration production
         if ($LASTEXITCODE -ne 0) { throw "ng build failed" }
     }
     finally {

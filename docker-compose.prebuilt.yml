@@ -14,4 +14,4 @@ services:
       dockerfile: Dockerfile.prebuilt
   ui:
     build:
-      dockerfile: Dockerfile.prebuilt   # packages ui/dist built on the host (npm ci && npx ng build)
+      dockerfile: Dockerfile.prebuilt   # packages ui/dist built on the host (npm ci && npm run build)
