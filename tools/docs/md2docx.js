@@ -1,5 +1,6 @@
 // Converts the project's Markdown documents (headings, paragraphs, lists, tables, code blocks, images) into styled .docx.
-// Wide images get their own landscape section so diagrams stay readable.
+// Diagrams (docs/hld/images) get their own page, landscape when wide, so they stay readable; other images
+// (screenshots) stay inline in the text, scaled to the page width.
 //   node md2docx.js <input.md> <output.docx> [title] [subtitle] [footer]
 const fs = require('fs');
 const path = require('path');
@@ -123,6 +124,23 @@ function flushPortrait() {
   current = [];
 }
 
+function addInlineImage(alt, file) {
+  const { w, h } = pngSize(file);
+  const maxWpx = PORTRAIT_TEXT_W / DXA_PER_PX;
+  const maxHpx = (A4.h - 2 * MARGIN - 2400) / DXA_PER_PX;
+  const scale = Math.min(1, maxWpx / w, maxHpx / h);
+  current.push(
+    new Paragraph({
+      alignment: AlignmentType.CENTER, spacing: { before: 120 },
+      children: [new ImageRun({ type: 'png', data: fs.readFileSync(file), transformation: { width: Math.round(w * scale), height: Math.round(h * scale) }, altText: { title: alt, description: alt, name: alt } })],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER, spacing: { before: 60, after: 200 },
+      children: [new TextRun({ text: alt, font: FONT, size: 18, color: '808080', italics: true })],
+    }),
+  );
+}
+
 function addImageSection(alt, file, caption) {
   const { w, h } = pngSize(file);
   const landscape = w > h * 1.15;
@@ -184,7 +202,12 @@ while (i < lines.length) {
 
   const img = t.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
   if (img) {
-    addImageSection(img[1], path.resolve(baseDir, img[2]), pendingCaption);
+    const file = path.resolve(baseDir, img[2]);
+    if (/[\\/]hld[\\/]images[\\/]/.test(file)) {
+      addImageSection(img[1], file, pendingCaption);
+    } else {
+      addInlineImage(img[1], file);
+    }
     pendingCaption = null;
     i++;
     continue;

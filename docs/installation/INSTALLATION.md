@@ -6,6 +6,7 @@
 | **Stack** | .NET 8 · ASP.NET Core · MongoDB 7 · Angular 17 + nginx (Web UI) · Docker / Docker Compose |
 | **Repository** | https://github.com/orontamir/Ta9_Oron |
 | **Related documents** | `README.md` (overview) · `docs/hld/TA9-HLD.docx` (High-Level Design) · `docs/logging/TA9-Logging-Observability.docx` (logs in detail) |
+| **Using the system** | `docs/user-guide/TA9-User-Guide.docx`: Web UI, Swagger and Postman, step by step |
 | **If something goes wrong** | **§5 Troubleshooting — where to look** (does not start · stuck · crashes) |
 
 ## 1. Overview
@@ -212,7 +213,7 @@ ta9-processor-service-1   ta9/processor-service   Up 12 seconds (healthy)   0.0.
 ta9-ui-1                  ta9/ui                  Up 10 seconds (healthy)   0.0.0.0:4200->8080/tcp
 ```
 
-Open the **Web UI** at **http://localhost:4200**: *New job* → *Generate sample* (e.g. 100 documents) → *Create job*. The details page follows the job live ("● live") until *Completed*, then shows the results table and, a few seconds later, the audit entry.
+The system is ready. **How to use it (Web UI, Swagger, Postman) is described in the User Guide.** For a quick check, open the **Web UI** at **http://localhost:4200**: *New job* → *Generate sample* (e.g. 100 documents) → *Create job*. The details page follows the job live ("● live") until *Completed*, then shows the results table and, a few seconds later, the audit entry.
 
 Then run the smoke test, which creates a job, waits for it to finish, and prints the results and the audit entry:
 

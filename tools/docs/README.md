@@ -13,6 +13,7 @@ Regenerate the diagram images and the Word documents from their sources.
 | `docs/logging/LOGGING.md` | `docs/logging/TA9-Logging-Observability.docx` | `npm run logging` |
 | `docs/limitations/LIMITATIONS.md` | `docs/limitations/TA9-Limitations-Production.docx` | `npm run limitations` |
 | `docs/ai-usage/AI-USAGE.md` | `docs/ai-usage/TA9-AI-Usage.docx` | `npm run ai-usage` |
+| `docs/user-guide/USER-GUIDE.md` | `docs/user-guide/TA9-User-Guide.docx` | `npm run user-guide` |
 | `docs/concurrency/CONCURRENCY.md` | `docs/concurrency/TA9-Concurrency-Performance.docx` | `npm run concurrency` |
 
 Setup: Node.js 18+, then `npm install`. Rendering needs Google Chrome or Chromium; set `CHROME_PATH` if it is not in the default location.

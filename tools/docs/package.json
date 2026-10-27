@@ -12,7 +12,8 @@
     "storage": "node md2docx.js ../../docs/storage/STORAGE.md ../../docs/storage/TA9-Storage.docx \"Storage\" \"TA9 Real-Time Document Processing System\" \"TA9 Document Processing \u2014 Storage\"",
     "logging": "node md2docx.js ../../docs/logging/LOGGING.md ../../docs/logging/TA9-Logging-Observability.docx \"Logging & Observability\" \"TA9 Real-Time Document Processing System\" \"TA9 Document Processing \u2014 Logging & Observability\"",
     "limitations": "node md2docx.js ../../docs/limitations/LIMITATIONS.md ../../docs/limitations/TA9-Limitations-Production.docx \"Known Limitations & Production Improvements\" \"TA9 Real-Time Document Processing System\" \"TA9 Document Processing \u2014 Limitations & Production\"",
-    "ai-usage": "node md2docx.js ../../docs/ai-usage/AI-USAGE.md ../../docs/ai-usage/TA9-AI-Usage.docx \"AI Usage Disclosure\" \"TA9 Real-Time Document Processing System\" \"TA9 Document Processing \u2014 AI Usage\""
+    "ai-usage": "node md2docx.js ../../docs/ai-usage/AI-USAGE.md ../../docs/ai-usage/TA9-AI-Usage.docx \"AI Usage Disclosure\" \"TA9 Real-Time Document Processing System\" \"TA9 Document Processing \u2014 AI Usage\"",
+    "user-guide": "node md2docx.js ../../docs/user-guide/USER-GUIDE.md ../../docs/user-guide/TA9-User-Guide.docx \"User Guide\" \"TA9 Real-Time Document Processing System\" \"TA9 Document Processing \u2014 User Guide\""
   },
   "dependencies": {
     "docx": "9.14.0",

@@ -7,7 +7,7 @@
 | **Stack** | C# / .NET 8 · ASP.NET Core · MongoDB 7 · Angular 17 + nginx (Web UI) · Docker Compose |
 | **Diagrams** | Editable source: [`diagrams/ta9-hld.drawio`](diagrams/ta9-hld.drawio) (one page per diagram). Open with [app.diagrams.net](https://app.diagrams.net) or the VS Code *Draw.io Integration* extension. PNG renderings are in [`images`](images) |
 | **Detailed design** | [`../design`](../design) — architecture, API contracts, reliability, decision log (D1–D29) |
-| **Topic documents** | Concurrency (`../concurrency`), WebSocket behavior (`../websocket`), Storage (`../storage`), **Logging & Observability** (`../logging`), **Limitations & production roadmap** (`../limitations`) |
+| **Topic documents** | Concurrency (`../concurrency`), WebSocket behavior (`../websocket`), Storage (`../storage`), **Logging & Observability** (`../logging`), **Limitations & production roadmap** (`../limitations`), **User Guide** (`../user-guide`) |
 
 | draw.io page | Section |
 |---|---|
