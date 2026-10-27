@@ -1,4 +1,3 @@
-# ./scripts/keys.ps1          (once: creates .env with the API keys)
 # docker compose up --build
 #   Job Service       http://localhost:5001/swagger
 #   Processor Service http://localhost:5002/swagger
@@ -47,12 +46,6 @@ services:
       Storage__Mongo__Database: ta9_jobs
       Processor__BaseUrl: http://processor-service:8080/
       Audit__BaseUrl: http://audit-service:8080/
-      # API keys come from .env (scripts/keys.ps1); never written in this file.
-      # Accepted: clients (reader, operator) and the Processor's WebSocket. Own key: sent to Processor and Audit.
-      Auth__ReaderKey: ${TA9_READER_KEY:?Run scripts/keys.ps1 (or keys.sh) first}
-      Auth__OperatorKey: ${TA9_OPERATOR_KEY:?Run scripts/keys.ps1 (or keys.sh) first}
-      Auth__ProcessorServiceKey: ${TA9_PROCESSOR_SERVICE_KEY:?Run scripts/keys.ps1 (or keys.sh) first}
-      Auth__JobServiceKey: ${TA9_JOB_SERVICE_KEY:?Run scripts/keys.ps1 (or keys.sh) first}
     depends_on:
       mongo:
         condition: service_healthy
@@ -77,9 +70,6 @@ services:
       Processing__MaxConcurrentJobs: "10"
       Processing__QueueCapacity: "100"
       Processing__DocParallelismPerJob: "2"
-      # Accepted: only the Job Service. Own key: sent on the WebSocket to the Job Service.
-      Auth__JobServiceKey: ${TA9_JOB_SERVICE_KEY:?Run scripts/keys.ps1 (or keys.sh) first}
-      Auth__ProcessorServiceKey: ${TA9_PROCESSOR_SERVICE_KEY:?Run scripts/keys.ps1 (or keys.sh) first}
     depends_on:
       # Not strictly required (the WS client reconnects with backoff), it just makes startup logs quieter.
       job-service:
@@ -105,10 +95,6 @@ services:
       Storage__Provider: Mongo
       Storage__ConnectionString: mongodb://mongo:27017
       Storage__Database: ta9_audit
-      # Accepted: clients (read entries) and the Job Service (records entries).
-      Auth__ReaderKey: ${TA9_READER_KEY:?Run scripts/keys.ps1 (or keys.sh) first}
-      Auth__OperatorKey: ${TA9_OPERATOR_KEY:?Run scripts/keys.ps1 (or keys.sh) first}
-      Auth__JobServiceKey: ${TA9_JOB_SERVICE_KEY:?Run scripts/keys.ps1 (or keys.sh) first}
     depends_on:
       mongo:
         condition: service_healthy

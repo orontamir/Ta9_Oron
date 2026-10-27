@@ -26,7 +26,6 @@
 
   <ItemGroup>
     <Compile Include="..\Shared\TestLogging.cs" Link="Shared\TestLogging.cs" />
-    <Compile Include="..\Shared\TestAuth.cs" Link="Shared\TestAuth.cs" />
   </ItemGroup>
 
   <ItemGroup>

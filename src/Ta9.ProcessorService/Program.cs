@@ -1,6 +1,5 @@
 using System.Text.Json.Serialization;
 using Ta9.ServiceDefaults;
-using Ta9.ServiceDefaults.Security;
 
 namespace Ta9.ProcessorService;
 
@@ -10,8 +9,6 @@ public class Program
     {
         var builder = WebApplication.CreateBuilder(args);
         builder.AddServiceDefaults("processor-service");
-        // Only the Job Service may submit, query or cancel work.
-        builder.AddApiKeyAuthentication(Caller.JobService);
         builder.Services.AddProcessing(builder.Configuration);
 
         builder.Services
@@ -19,7 +16,7 @@ public class Program
             .AddControllers(o => o.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true)
             .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
         builder.Services.AddEndpointsApiExplorer();
-        builder.Services.AddSwaggerWithApiKey();
+        builder.Services.AddSwaggerGen();
 
         var app = builder.Build();
 

@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http;
@@ -8,7 +7,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using Serilog;
-using Serilog.Context;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
 using Ta9.ServiceDefaults.Logging;
@@ -98,32 +96,11 @@ public static class ServiceDefaultsExtensions
                     : httpContext.Request.Path.StartsWithSegments("/health")
                         ? LogEventLevel.Verbose
                         : LogEventLevel.Information;
-            // Who made the call is stored with the request line (property "Caller").
-            options.EnrichDiagnosticContext = (diagnostics, httpContext) =>
-                diagnostics.Set("Caller", CallerName(httpContext));
         });
 
-        // Authentication runs inside the correlation scope, so rejected calls are traceable too.
-        if (app.Services.GetService<IAuthenticationSchemeProvider>() is not null)
-        {
-            app.UseAuthentication();
-            app.Use(async (context, next) =>
-            {
-                using (LogContext.PushProperty("Caller", CallerName(context)))
-                {
-                    await next(context);
-                }
-            });
-            app.UseAuthorization();
-        }
-
-        // Health checks stay anonymous: Docker and orchestrators probe them without credentials.
-        app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = c => c.Tags.Contains(LiveTag) }).AllowAnonymous();
-        app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = c => c.Tags.Contains(ReadyTag) }).AllowAnonymous();
+        app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = c => c.Tags.Contains(LiveTag) });
+        app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = c => c.Tags.Contains(ReadyTag) });
 
         return app;
     }
-
-    private static string CallerName(HttpContext context) =>
-        context.User.Identity is { IsAuthenticated: true, Name: { } name } ? name : "anonymous";
 }

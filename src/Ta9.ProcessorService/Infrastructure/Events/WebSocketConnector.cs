@@ -1,6 +1,5 @@
 using System.Net.WebSockets;
 using Microsoft.Extensions.Options;
-using Ta9.ServiceDefaults.Security;
 
 namespace Ta9.ProcessorService.Infrastructure.Events;
 
@@ -10,7 +9,7 @@ public interface IWebSocketConnector
     Task<WebSocket> ConnectAsync(Uri uri, CancellationToken cancellationToken);
 }
 
-public sealed class ClientWebSocketConnector(IOptions<JobServiceEventsOptions> options, IOptions<ApiKeyOptions> keys) : IWebSocketConnector
+public sealed class ClientWebSocketConnector(IOptions<JobServiceEventsOptions> options) : IWebSocketConnector
 {
     public const string ProcessorIdHeader = "X-Processor-Id";
 
@@ -19,10 +18,6 @@ public sealed class ClientWebSocketConnector(IOptions<JobServiceEventsOptions> o
         var socket = new ClientWebSocket();
         socket.Options.KeepAliveInterval = options.Value.KeepAliveInterval;
         socket.Options.SetRequestHeader(ProcessorIdHeader, Environment.MachineName);
-        if (!string.IsNullOrEmpty(keys.Value.ProcessorServiceKey))
-        {
-            socket.Options.SetRequestHeader(ApiKeyAuthenticationHandler.HeaderName, keys.Value.ProcessorServiceKey);
-        }
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(options.Value.ConnectTimeout);

@@ -2,7 +2,6 @@ using Microsoft.Extensions.Options;
 using Ta9.JobService.Application;
 using Ta9.JobService.Infrastructure.Processor;
 using Ta9.ServiceDefaults;
-using Ta9.ServiceDefaults.Security;
 
 namespace Ta9.JobService;
 
@@ -30,8 +29,7 @@ public static class ProcessorIntegrationServiceCollectionExtensions
                 http.BaseAddress = processor.BaseUrl;
                 http.Timeout = processor.RequestTimeout;
             })
-            .AddCorrelationIdPropagation()
-            .AddApiKey(keys => keys.JobServiceKey);
+            .AddCorrelationIdPropagation();
 
         services.AddSingleton<IProcessorClient, HttpProcessorClient>();
         services.AddSingleton<IJobDispatchSignal, JobDispatchSignal>();

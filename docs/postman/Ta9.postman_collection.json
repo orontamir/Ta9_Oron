@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "b71a0683-8068-4bd3-b800-53123a2fce46",
     "name": "TA9 Document Processing",
-    "description": "Proof-of-concept flow. Start the stack with `docker compose up --build`, then run the requests in order (or use Collection Runner). 'Create job' stores {{jobId}} for the following requests. Processing is asynchronous: re-run 'Get job' until the status is Completed.\n\nAuthentication: set the collection variable apiKey to the operator key (TA9_OPERATOR_KEY in .env, created by ./scripts/keys.ps1; print it with ./scripts/keys.ps1 -Show). The internal Processor requests use serviceKey (TA9_JOB_SERVICE_KEY). Health checks are anonymous.",
+    "description": "Proof-of-concept flow. Start the stack with `docker compose up --build`, then run the requests in order (or use Collection Runner). 'Create job' stores {{jobId}} for the following requests. Processing is asynchronous: re-run 'Get job' until the status is Completed.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -21,16 +21,6 @@
     {
       "key": "jobId",
       "value": ""
-    },
-    {
-      "key": "apiKey",
-      "value": "",
-      "description": "Operator key (full access): TA9_OPERATOR_KEY from .env, printed by ./scripts/keys.ps1 -Show"
-    },
-    {
-      "key": "serviceKey",
-      "value": "",
-      "description": "Job Service key, only for the internal Processor requests in folder 4: TA9_JOB_SERVICE_KEY from .env"
     }
   ],
   "item": [
@@ -360,27 +350,7 @@
             "method": "GET",
             "header": [],
             "url": "{{processorUrl}}/api/process",
-            "description": "",
-            "auth": {
-              "type": "apikey",
-              "apikey": [
-                {
-                  "key": "key",
-                  "value": "X-Api-Key",
-                  "type": "string"
-                },
-                {
-                  "key": "value",
-                  "value": "{{serviceKey}}",
-                  "type": "string"
-                },
-                {
-                  "key": "in",
-                  "value": "header",
-                  "type": "string"
-                }
-              ]
-            }
+            "description": ""
           }
         },
         {
@@ -389,27 +359,7 @@
             "method": "GET",
             "header": [],
             "url": "{{processorUrl}}/api/process/{{jobId}}",
-            "description": "",
-            "auth": {
-              "type": "apikey",
-              "apikey": [
-                {
-                  "key": "key",
-                  "value": "X-Api-Key",
-                  "type": "string"
-                },
-                {
-                  "key": "value",
-                  "value": "{{serviceKey}}",
-                  "type": "string"
-                },
-                {
-                  "key": "in",
-                  "value": "header",
-                  "type": "string"
-                }
-              ]
-            }
+            "description": ""
           }
         },
         {
@@ -418,10 +368,7 @@
             "method": "GET",
             "header": [],
             "url": "{{jobsUrl}}/health/ready",
-            "description": "",
-            "auth": {
-              "type": "noauth"
-            }
+            "description": ""
           }
         },
         {
@@ -430,10 +377,7 @@
             "method": "GET",
             "header": [],
             "url": "{{processorUrl}}/health/ready",
-            "description": "",
-            "auth": {
-              "type": "noauth"
-            }
+            "description": ""
           }
         },
         {
@@ -442,33 +386,10 @@
             "method": "GET",
             "header": [],
             "url": "{{auditUrl}}/health/ready",
-            "description": "",
-            "auth": {
-              "type": "noauth"
-            }
+            "description": ""
           }
         }
       ]
     }
-  ],
-  "auth": {
-    "type": "apikey",
-    "apikey": [
-      {
-        "key": "key",
-        "value": "X-Api-Key",
-        "type": "string"
-      },
-      {
-        "key": "value",
-        "value": "{{apiKey}}",
-        "type": "string"
-      },
-      {
-        "key": "in",
-        "value": "header",
-        "type": "string"
-      }
-    ]
-  }
+  ]
 }

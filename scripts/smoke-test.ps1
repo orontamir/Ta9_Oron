@@ -11,22 +11,10 @@ param(
     [string]$AuditUrl = "http://localhost:5003",
     [int]$Jobs = 1,
     [int]$Documents = 3,
-    [int]$TimeoutSeconds = 180,
-    # Operator key (full access). Default: $env:TA9_OPERATOR_KEY, else the key in .env (scripts/keys.ps1).
-    [string]$ApiKey = $env:TA9_OPERATOR_KEY
+    [int]$TimeoutSeconds = 180
 )
 
 $ErrorActionPreference = "Stop"
-
-if (-not $ApiKey) {
-    $envFile = Join-Path (Split-Path -Parent $PSScriptRoot) ".env"
-    if (Test-Path $envFile) {
-        $line = Get-Content $envFile | Where-Object { $_ -match '^TA9_OPERATOR_KEY=(\S+)' } | Select-Object -First 1
-        if ($line -match '^TA9_OPERATOR_KEY=(\S+)') { $ApiKey = $Matches[1] }
-    }
-}
-if (-not $ApiKey) { throw "No API key: run ./scripts/keys.ps1 first, or pass -ApiKey" }
-$headers = @{ "X-Api-Key" = $ApiKey }
 
 function New-JobBody([int]$index) {
     $docs = for ($i = 0; $i -lt $Documents; $i++) {
@@ -38,7 +26,7 @@ function New-JobBody([int]$index) {
 $stopwatch = [Diagnostics.Stopwatch]::StartNew()
 # @() keeps a single job as an array (Windows PowerShell 5.1 has no .Count on a lone object).
 $created = @(for ($j = 0; $j -lt $Jobs; $j++) {
-    Invoke-RestMethod -Method Post -Uri "$JobsUrl/api/jobs" -Headers $headers -ContentType "application/json; charset=utf-8" -Body (New-JobBody $j)
+    Invoke-RestMethod -Method Post -Uri "$JobsUrl/api/jobs" -ContentType "application/json; charset=utf-8" -Body (New-JobBody $j)
 })
 Write-Host "Created $($created.Count) job(s) with $Documents document(s) each"
 
@@ -46,7 +34,7 @@ $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
 foreach ($job in $created) {
     do {
         Start-Sleep -Milliseconds 500
-        $current = Invoke-RestMethod -Uri "$JobsUrl/api/jobs/$($job.id)" -Headers $headers
+        $current = Invoke-RestMethod -Uri "$JobsUrl/api/jobs/$($job.id)"
         if ((Get-Date) -gt $deadline) { throw "Timed out waiting for job $($job.id) (status $($current.status))" }
     } while ($current.status -notin @("Completed", "Failed", "Cancelled"))
     Write-Host ("{0}  {1,-10} {2} docs  succeeded={3} failed={4} words={5}" -f $current.id, $current.status,
@@ -56,7 +44,7 @@ $stopwatch.Stop()
 Write-Host ("All jobs finished in {0:N1}s" -f $stopwatch.Elapsed.TotalSeconds)
 
 $first = $created[0].id
-$results = Invoke-RestMethod -Uri "$JobsUrl/api/jobs/$first/results?pageSize=3" -Headers $headers
+$results = Invoke-RestMethod -Uri "$JobsUrl/api/jobs/$first/results?pageSize=3"
 Write-Host "`nFirst results of job ${first}:"
 $results.items | ForEach-Object {
     $top = ($_.result.topWords | ForEach-Object { "$($_.word)($($_.count))" }) -join ", "
@@ -66,7 +54,7 @@ $results.items | ForEach-Object {
 
 Start-Sleep -Seconds 6 # the audit publisher runs every 5 s
 try {
-    $audit = Invoke-RestMethod -Uri "$AuditUrl/api/audit/$first" -Headers $headers
+    $audit = Invoke-RestMethod -Uri "$AuditUrl/api/audit/$first"
     Write-Host "`nAudit: $($audit.status), recorded at $($audit.recordedAt)"
 } catch {
     Write-Warning "Audit entry not available yet: $($_.Exception.Message)"

@@ -26,15 +26,7 @@ public sealed class JobServiceFactory : WebApplicationFactory<Program>
         builder.UseSetting("Reconcile:Enabled", "false");
         builder.UseSetting("Audit:Enabled", "false");
         Logs.AttachTo(builder);
-        TestApiKeys.Apply(builder);
         builder.ConfigureTestServices(services => services.AddSingleton<IProcessorClient>(Processor));
-    }
-
-    /// <summary>Clients created by this factory act as an operator (full access) unless a test changes the key.</summary>
-    protected override void ConfigureClient(HttpClient client)
-    {
-        base.ConfigureClient(client);
-        client.WithApiKey(TestApiKeys.Operator);
     }
 
     public IJobRepository Jobs => Services.GetRequiredService<IJobRepository>();

@@ -15,8 +15,6 @@ using Ta9.JobService.Infrastructure.Audit;
 using Ta9.JobService.Infrastructure.Processor;
 using Ta9.ProcessorService.Domain;
 using Ta9.ProcessorService.Infrastructure.Events;
-using Ta9.ServiceDefaults.Security;
-using Ta9.Tests.Shared;
 using AuditProgram = Ta9.AuditService.Program;
 using JobProgram = Ta9.JobService.Program;
 using ProcessorProgram = Ta9.ProcessorService.Program;
@@ -83,9 +81,8 @@ public sealed class Ta9System : IAsyncDisposable
             builder.UseSetting("Storage:ConnectionString", _mongoConnectionString);
             builder.UseSetting("Storage:Database", $"e2e_audit_{_suffix}");
             UseMongoLogging(builder);
-            TestApiKeys.Apply(builder);
         });
-        AuditApi = Audit.CreateClient().WithApiKey(TestApiKeys.Reader);
+        AuditApi = Audit.CreateClient();
 
         Jobs = new ConfigurableFactory<JobProgram>(builder =>
         {
@@ -99,7 +96,6 @@ public sealed class Ta9System : IAsyncDisposable
             builder.UseSetting("Reconcile:StaleAfter", "00:00:02");
             builder.UseSetting("Audit:Interval", "00:00:00.500");
             UseMongoLogging(builder);
-            TestApiKeys.Apply(builder);
             builder.ConfigureTestServices(services =>
             {
                 services.AddHttpClient(HttpProcessorClient.HttpClientName)
@@ -108,12 +104,12 @@ public sealed class Ta9System : IAsyncDisposable
                     .ConfigurePrimaryHttpMessageHandler(() => new RoutingHandler(() => Audit.Server.CreateHandler()));
             });
         });
-        JobsApi = Jobs.CreateClient().WithApiKey(TestApiKeys.Operator);
+        JobsApi = Jobs.CreateClient();
 
         if (_options.ProcessorReachable)
         {
             _processor = CreateProcessor(_options.Analyzer, _options.ProcessorShutdownTimeout);
-            ProcessorApi = _processor.CreateClient().WithApiKey(TestApiKeys.JobService);
+            ProcessorApi = _processor.CreateClient();
         }
     }
 
@@ -124,7 +120,7 @@ public sealed class Ta9System : IAsyncDisposable
         var oldApi = ProcessorApi;
 
         _processor = CreateProcessor(analyzer, shutdownTimeout: null);
-        ProcessorApi = _processor.CreateClient().WithApiKey(TestApiKeys.JobService); // starts the new instance before the old one goes away
+        ProcessorApi = _processor.CreateClient(); // starts the new instance before the old one goes away
 
         oldApi.Dispose();
         if (old is not null)
@@ -206,7 +202,6 @@ public sealed class Ta9System : IAsyncDisposable
             builder.UseSetting("JobServiceEvents:ReconnectMaxDelay", "00:00:01");
             builder.UseSetting("JobServiceEvents:AckTimeout", "00:00:05");
             UseMongoLogging(builder);
-            TestApiKeys.Apply(builder);
             builder.ConfigureTestServices(services =>
             {
                 services.AddSingleton<IWebSocketConnector>(new JobServiceTestConnector(() => Jobs.Server));
@@ -239,13 +234,6 @@ public sealed class Ta9System : IAsyncDisposable
     private sealed class JobServiceTestConnector(Func<TestServer> jobService) : IWebSocketConnector
     {
         public Task<WebSocket> ConnectAsync(Uri uri, CancellationToken cancellationToken) =>
-            ConnectAsProcessor(jobService(), cancellationToken);
-
-        private static Task<WebSocket> ConnectAsProcessor(TestServer server, CancellationToken cancellationToken)
-        {
-            var client = server.CreateWebSocketClient();
-            client.ConfigureRequest = request => request.Headers[ApiKeyAuthenticationHandler.HeaderName] = TestApiKeys.ProcessorService;
-            return client.ConnectAsync(new Uri("ws://localhost/ws/processor-events"), cancellationToken);
-        }
+            jobService().CreateWebSocketClient().ConnectAsync(new Uri("ws://localhost/ws/processor-events"), cancellationToken);
     }
 }
