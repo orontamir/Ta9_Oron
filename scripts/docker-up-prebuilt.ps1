@@ -16,15 +16,23 @@ try {
     }
 
     Write-Host "Building the UI (ui/dist)..."
-    Push-Location (Join-Path $root "ui")
+    if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+        throw "Node.js is not installed (needed to build the UI on the host): install the LTS from https://nodejs.org"
+    }
+    Write-Host "  node $(node -v), npm $(npm -v)"
+    $ui = Join-Path $root "ui"
+    Push-Location $ui
     try {
         npm ci --no-audit --no-fund
-        if ($LASTEXITCODE -ne 0) { throw "npm ci failed (Node.js 18.13+ or 20.9+ is required for the prebuilt path)" }
-        npm run build -- --configuration production
-        if ($LASTEXITCODE -ne 0) { throw "ng build failed" }
+        if ($LASTEXITCODE -ne 0) { throw "npm ci failed (exit code $LASTEXITCODE)" }
+        node node_modules/@angular/cli/bin/ng.js build --configuration production
+        if ($LASTEXITCODE -ne 0) { throw "ng build failed (exit code $LASTEXITCODE)" }
     }
     finally {
         Pop-Location
+    }
+    if (-not (Test-Path (Join-Path $ui "dist/ta9-ui/browser/index.html"))) {
+        throw "The UI build did not produce ui/dist/ta9-ui/browser/index.html"
     }
 
     docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build -d
