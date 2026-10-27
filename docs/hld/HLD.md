@@ -3,10 +3,10 @@
 | | |
 |---|---|
 | **Document** | High-Level Design (HLD) |
-| **System** | TA9 Document Processing (Job Service · Processor Service · Audit Service) |
-| **Stack** | C# / .NET 8 · ASP.NET Core · MongoDB 7 · Docker Compose |
+| **System** | TA9 Document Processing (Job Service · Processor Service · Audit Service · Web UI) |
+| **Stack** | C# / .NET 8 · ASP.NET Core · MongoDB 7 · Angular 17 + nginx (Web UI) · Docker Compose |
 | **Diagrams** | Editable source: [`diagrams/ta9-hld.drawio`](diagrams/ta9-hld.drawio) (one page per diagram). Open with [app.diagrams.net](https://app.diagrams.net) or the VS Code *Draw.io Integration* extension. PNG renderings are in [`images`](images) |
-| **Detailed design** | [`../design`](../design) — architecture, API contracts, reliability, decision log (D1–D26) |
+| **Detailed design** | [`../design`](../design) — architecture, API contracts, reliability, decision log (D1–D29) |
 | **Topic documents** | Concurrency (`../concurrency`), WebSocket behavior (`../websocket`), Storage (`../storage`), **Logging & Observability** (`../logging`), **Limitations & production roadmap** (`../limitations`) |
 
 | draw.io page | Section |
@@ -34,9 +34,9 @@ The system accepts batches of text documents, analyzes them asynchronously and e
 - SHA-256
 - character count, line count, average word length and longest word
 
-**In scope:** three services communicating over REST, WebSocket and SSE; bounded concurrent processing; failure handling (invalid input, unreachable services, restarts, lost or duplicate events); persistent storage; observability; automated tests; containerized deployment.
+**In scope:** three services communicating over REST, WebSocket and SSE; a small web console (Angular) over the public REST API; bounded concurrent processing; failure handling (invalid input, unreachable services, restarts, lost or duplicate events); persistent storage; observability; automated tests; containerized deployment.
 
-**Out of scope (by assignment):** authentication/authorization, UI, Kubernetes, message brokers, Redis, CI/CD.
+**Out of scope (by assignment):** authentication/authorization (considered, implemented and deliberately rolled back to keep the solution simple to run and review, D29), Kubernetes, message brokers, Redis, CI/CD. The assignment lists a frontend as optional; a simple one was added (D28).
 
 ## 2. Requirements and quality goals
 
@@ -62,6 +62,7 @@ The system accepts batches of text documents, analyzes them asynchronously and e
 | **Job Service** | Public API. **Owns the job lifecycle** (single source of truth). Dispatches work, applies processor events, streams status (SSE), publishes audit summaries | MongoDB `ta9_jobs` (`jobs`, `job_documents`) | Processor (REST out, WS in), Audit (REST out), clients (REST, SSE) |
 | **Processor Service** | Stateless worker: accepts work, analyzes documents with bounded concurrency, reports the lifecycle | In memory (finished results kept 1 h for reconciliation) | Job Service (WS client) |
 | **Audit Service** | Stores immutable summaries of finished jobs | MongoDB `ta9_audit` (`audit_entries`) | — |
+| **Web UI** (`ui/`, optional) | Browser console: list jobs, create jobs, follow a job live, results, cancel / delete, audit entry. **No logic of its own**: it only calls the public REST API | None (stateless; static files on nginx) | Job Service (REST + SSE), Audit Service (REST), both through its own nginx proxy |
 | **Ta9.Contracts** (library) | Shared REST DTOs, WS event envelope and serializer, input limits | — | — |
 | **Ta9.ServiceDefaults** (library) | Logging pipeline (Serilog → console + batched MongoDB sink), lifecycle / crash logging, correlation id, ProblemDetails, health endpoints, exponential backoff | MongoDB `ta9_logs` (`logs`, shared by all services) | MongoDB (logs) |
 
@@ -70,6 +71,7 @@ The system accepts batches of text documents, analyzes them asynchronously and e
 | From → To | Protocol | Purpose | Delivery semantics |
 |---|---|---|---|
 | Client → Job Service | REST | Create, list, get, results, cancel, delete | Synchronous; job processing is asynchronous |
+| Browser → Web UI (nginx :4200) → Job / Audit Service | HTTP · REST · SSE | The same public API, proxied: `/api/jobs` → Job Service, `/api/audit` → Audit Service | One origin for the browser: no CORS, no change to the services; SSE proxied without buffering |
 | Job Service → Client | **SSE** | Live status and progress per job | Snapshot + every change; stream ends at a terminal state |
 | Job Service → Processor | REST | Dispatch (POST, idempotent by `jobId`), status (GET), cancel (DELETE) | Retries with persisted exponential backoff |
 | Processor → Job Service | **WebSocket** | `JobStarted`, `JobProgress`, `JobCompleted`, `JobFailed`, `JobCancelled` + acks back | Lifecycle: **at-least-once** (outbox + ack). Progress: best effort |
@@ -100,6 +102,19 @@ The system accepts batches of text documents, analyzes them asynchronously and e
 | `JobRunner` | `Parallel.ForEachAsync` with DOP 2 per job; per-document failure isolation; throttled progress; cooperative cancellation |
 | `DocumentAnalyzer` + `Tokenizer` | Pure, deterministic analysis (Unicode, NFC, case-insensitive; ties broken alphabetically) |
 | `EventOutbox` + `JobServiceEventsClient` | Lifecycle events kept until acked and replayed after reconnect or ack timeout; reconnect with backoff and jitter |
+
+### 4.3 Web UI (Angular 17)
+
+| Part | Role |
+|---|---|
+| `JobsApi` | Thin client over the REST API (relative URLs) and the SSE stream (`EventSource`, auto-reconnect) |
+| `JobsListComponent` | `GET /api/jobs`: status filter, paging, auto-refresh every 3 s |
+| `JobCreateComponent` | `POST /api/jobs`: typed text, `.txt` upload, or up to 1,000 generated sample documents; client-side hints only, the server validates |
+| `JobDetailComponent` | Live status over SSE until a terminal state; cancel / delete; paged results; polls the audit entry until it is recorded |
+| `describeError` | Shows ProblemDetails / ValidationProblemDetails (field errors) as one readable message |
+| `nginx.conf` | Serves the static build and proxies `/api/jobs` and `/api/audit`; SSE without buffering; 11 MB body limit |
+
+Standalone components, signals, the `@if` / `@for` control flow; plain CSS, no UI library. Tests: 21 component tests (STD §7.6).
 
 ## 5. Class diagrams
 
@@ -213,8 +228,8 @@ Full analysis with diagrams, advantages, limitations and alternatives: [`../conc
 
 ![Deployment](images/deployment.png)
 
-- **Images:** one multi-stage `Dockerfile` (`PROJECT` build arg) with a cached restore layer, the `aspnet:8.0` runtime and a non-root user. `Dockerfile.prebuilt` serves networks with TLS inspection.
-- **Health checks:** `curl /health/ready` per service. Startup order: Mongo → Job + Audit → Processor.
+- **Images:** one multi-stage `Dockerfile` (`PROJECT` build arg) with a cached restore layer, the `aspnet:8.0` runtime and a non-root user. Web UI: `node:20` build stage → `nginx-unprivileged` (non-root, port 8080, published on 4200). `Dockerfile.prebuilt` serves networks with TLS inspection: it packages host-published .NET binaries and the committed UI build (`ui/prebuilt`), so no NuGet or npm access is needed inside Docker.
+- **Health checks:** `curl /health/ready` per service; the UI container checks that nginx serves the app. Startup order: Mongo → Job + Audit → Processor + UI.
 - **Configuration:** environment variables override `appsettings.json` (e.g. `Processing__MaxConcurrentJobs`, `Storage__Provider`, `Logging__Mongo__MinimumLevel`).
 - **Logs:** console → `docker compose logs`; all services → MongoDB `ta9_logs.logs` (`Logging__Mongo__ConnectionString: mongodb://mongo:27017`). Troubleshooting order: `docker compose ps` → `docker compose logs` → `ta9_logs.logs` → `/health/ready` (Installation Guide §5).
 
@@ -231,7 +246,8 @@ The complete list, grouped by area with IDs, and a prioritized production roadma
 | Processor state in memory | Reconciler redispatch (≤ ~60 s latency) | Durable broker |
 | Per-instance SSE/WS fan-out | Single Job Service instance | Redis pub/sub |
 | Large `JobCompleted` messages | 16 MB cap; ~0.5 MB for 1,000 docs | Pull results via REST, or chunk them |
-| No auth / rate limiting | Out of scope | JWT, mTLS, rate limiter |
+| No auth / rate limiting | Out of scope; considered and rolled back (D29) | JWT, mTLS, rate limiter |
+| Web UI adds a build toolchain (Node, npm) | Docker builds it; `ui/prebuilt` for networks that block npm | Build in CI; browser end-to-end tests |
 | A job deleted before its audit summary is published | Delete is allowed only for finished jobs | Publish before delete |
 | Long processor outage | Jobs left untouched and rechecked | Maximum age before failing |
 | Logs share the MongoDB server with the data | Console keeps everything; losses are counted and reported | Separate log platform, OpenTelemetry |

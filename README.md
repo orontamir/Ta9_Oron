@@ -7,6 +7,7 @@ Three .NET 8 services that process documents asynchronously and talk over **REST
 | **Job Service** | 5001 | Public API (`/api/jobs`). Owns the job lifecycle (source of truth, MongoDB), dispatches work, consumes processor events over WebSocket, streams status to clients over SSE |
 | **Processor Service** | 5002 | Internal API (`/api/process`). Analyzes documents with bounded concurrency and reports the lifecycle back over a WebSocket |
 | **Audit Service** (bonus) | 5003 | Stores immutable summaries of finished jobs (`/api/audit`) |
+| **Web UI** (optional) | 4200 | Angular 17 console over the same REST API: list, create (text, `.txt` files, or up to 1,000 generated documents), live progress (SSE), results, cancel / delete, audit entry. Served by nginx, which proxies `/api` to the services |
 
 For each document the processor computes the word count, unique word count, top-5 words, SHA-256, character count, line count, average word length and longest word.
 
@@ -28,14 +29,15 @@ For each document the processor computes the word count, unique word count, top-
 ### Docker (recommended)
 ```bash
 docker compose up --build -d
-docker compose ps            # wait until all four containers are "healthy"
+docker compose ps            # wait until all five containers are "healthy"
 ```
+- **Web UI: http://localhost:4200**
 - Swagger: http://localhost:5001/swagger · http://localhost:5002/swagger · http://localhost:5003/swagger
 - Postman: import [`docs/postman/Ta9.postman_collection.json`](docs/postman/Ta9.postman_collection.json) and run the requests in order. "Create job" stores `{{jobId}}` for the rest.
 - Smoke test: `./scripts/smoke-test.ps1` (or `./scripts/smoke-test.sh`). The assignment's load scenario: `./scripts/smoke-test.ps1 -Jobs 10 -Documents 1000`
 - Live status stream: `curl -N http://localhost:5001/api/jobs/<id>/events`
 
-> **Behind a TLS-inspecting corporate proxy**, the build fails with `NU1301` because `dotnet restore` inside the container does not trust the proxy's certificate. Use `./scripts/docker-up-prebuilt.ps1` instead. It publishes on the host and lets Docker only package the binaries (`Dockerfile.prebuilt`). If PowerShell refuses unsigned scripts from a network share, run `powershell -ExecutionPolicy Bypass -File .\scripts\<script>.ps1`.
+> **Behind a TLS-inspecting corporate proxy**, the build fails with `NU1301` because `dotnet restore` inside the container does not trust the proxy's certificate. Use `./scripts/docker-up-prebuilt.ps1` instead. It publishes on the host and lets Docker only package the binaries (`Dockerfile.prebuilt`). The Web UI then uses its committed build (`ui/prebuilt`), so npm is not needed either (some networks also block npm downloads). If PowerShell refuses unsigned scripts from a network share, run `powershell -ExecutionPolicy Bypass -File .\scripts\<script>.ps1`.
 
 ### Locally with the .NET 8 SDK
 ```bash
@@ -44,12 +46,15 @@ dotnet run --project src/Ta9.JobService                   # http://localhost:500
 dotnet run --project src/Ta9.ProcessorService             # http://localhost:5002
 dotnet run --project src/Ta9.AuditService                 # http://localhost:5003
 ```
+Web UI against the local services: `cd ui && npm ci && npm start` → http://localhost:4200 (the dev-server proxy forwards `/api` to ports 5001 / 5003). Node.js 20–24.
+
 All settings live in each service's `appsettings.json` and can be overridden with environment variables (e.g. `Processing__MaxConcurrentJobs=20`).
 
 ## 2. Tests
 ```bash
 dotnet test Ta9.sln                                   # everything (~440 tests); Docker must be running
 dotnet test Ta9.sln --filter "Category!=Integration"  # without Docker: unit + in-memory API tests
+cd ui && npm ci && npm run test:ci                    # Web UI: 21 component tests (headless Chrome)
 ```
 
 | Project | What it covers |
@@ -58,11 +63,14 @@ dotnet test Ta9.sln --filter "Category!=Integration"  # without Docker: unit + i
 | `Ta9.ProcessorService.Tests` | Tokenizer and analyzer rules; state, throttling, runner, worker pool **concurrency bounds**; queue/backpressure; REST API; outbox semantics; **real WebSocket** client tests (replay, buffering, ack timeout) against a fake Job Service |
 | `Ta9.JobService.Tests` | Exhaustive state-transition table; aggregate rules; optimistic concurrency; one **repository contract suite run against both InMemory and real MongoDB** (Testcontainers); dispatcher, reconciler, event handler, audit publisher (manual clock); REST, WebSocket endpoint and SSE through the real pipeline |
 | `Ta9.AuditService.Tests` | API, validation, repository contract (InMemory + MongoDB) |
+| `ui` (Jasmine + Karma) | Web UI: API client (URLs, parameters, 404 → "not recorded yet"), error messages from ProblemDetails, jobs list, create form (validation hints, sample generator, server errors), job details (live updates, results, audit, actions) |
 | `Ta9.IntegrationTests` | All three services in-process, wired over REST + a real WebSocket + MongoDB: full flow, **10 jobs × 1,000 documents** with bounded parallelism asserted, unreachable processor, **processor restart mid-job**, cancellation |
 
 ## 3. Architecture
 
 ```
+Browser ──► Web UI :4200 (nginx) ──/api/jobs, /api/audit──┐   (optional console, same public API)
+                                                          ▼
 Client ──REST /api/jobs──► Job Service ──REST POST /api/process──► Processor Service
    ▲                         │   ▲                                   │
    └──SSE /api/jobs/id/events┘   └──── WebSocket events + acks ──────┘
@@ -86,6 +94,7 @@ src/Ta9.Contracts         shared REST/WS DTOs, limits, event serializer
 src/Ta9.ServiceDefaults   Serilog, correlation id, ProblemDetails, health checks, backoff
 src/Ta9.<Service>/        Api/ · Application/ · Domain/ · Infrastructure/
 tests/…                   one test project per service + cross-service integration tests
+ui/                       Angular 17 web console (+ nginx.conf, Dockerfile, prebuilt/ for restricted networks)
 ```
 
 ## 4. Key technical decisions and trade-offs
@@ -152,7 +161,7 @@ Full description: [`docs/logging/LOGGING.md`](docs/logging/LOGGING.md). Where to
 - **Health:** `/health/live` and `/health/ready` (storage, processor WS link). Used by the docker-compose health checks.
 
 ## 9. Known limitations and what I would improve for production
-Full list (about 40 items with IDs, impact, today's mitigation and the production fix), a prioritized roadmap and a today-vs-proposed architecture diagram: [`docs/limitations/LIMITATIONS.md`](docs/limitations/LIMITATIONS.md) · Word: [`TA9-Limitations-Production.docx`](docs/limitations/TA9-Limitations-Production.docx).
+Full list (45 items with IDs, impact, today's mitigation and the production fix), a prioritized roadmap and a today-vs-proposed architecture diagram: [`docs/limitations/LIMITATIONS.md`](docs/limitations/LIMITATIONS.md) · Word: [`TA9-Limitations-Production.docx`](docs/limitations/TA9-Limitations-Production.docx).
 
 **Main limitations**
 - **One Job Service instance (SC-1).** SSE fan-out and the WS fan-in are per instance. Dispatch and updates are already multi-instance safe (leases, optimistic concurrency).
@@ -163,6 +172,7 @@ Full list (about 40 items with IDs, impact, today's mitigation and the productio
 - **Fixed concurrency limits and inline payloads (SC-3, SC-4).** Bounded and protected by input limits, but not adaptive.
 - **`POST /api/jobs` has no idempotency key (API-1).** A client retry can create a duplicate job.
 - **Docker Compose on one host, no CI/CD (OP-1, OP-2).**
+- **Web UI (UI-1…UI-6):** Angular 17 is past official support, there are no browser end-to-end tests, and `ui/prebuilt` must be refreshed by hand.
 
 **What I would do for production**
 1. **P1, before production traffic:** API gateway with OIDC/JWT, TLS and rate limits; mTLS between services; MongoDB replica set with auth, TLS and backups; `Idempotency-Key`; CI/CD with image scanning; OpenTelemetry metrics, traces and alerts.
@@ -190,7 +200,7 @@ Full contracts: [`docs/design/02-api-and-contracts.md`](docs/design/02-api-and-c
 ---
 
 ## 11. AI Usage
-Full disclosure (tools, workflow, what was generated, how it was verified, 15 representative prompts, 14 changed / rejected / corrected AI outputs, lessons learned): [`docs/ai-usage/AI-USAGE.md`](docs/ai-usage/AI-USAGE.md) · Word: [`TA9-AI-Usage.docx`](docs/ai-usage/TA9-AI-Usage.docx).
+Full disclosure (tools, workflow, what was generated, how it was verified, 17 representative prompts, 17 changed / rejected / corrected AI outputs, lessons learned): [`docs/ai-usage/AI-USAGE.md`](docs/ai-usage/AI-USAGE.md) · Word: [`TA9-AI-Usage.docx`](docs/ai-usage/TA9-AI-Usage.docx).
 
 **Tool:** Claude Code (Anthropic, Claude Opus 5.5) in a terminal session. On my machine: .NET 8 SDK, Docker Desktop, PowerShell, Git, Postman.
 
@@ -207,11 +217,12 @@ Full disclosure (tools, workflow, what was generated, how it was verified, 15 re
 - "Storage: we chose MongoDB. Code-wise, do we meet this section's requirement?"
 - "The logs must be saved in MongoDB and printed to the console: Debug to debug crashes, Info to show the flow, Error when there are errors … and add tests that include logs."
 
-**AI suggestions I changed or rejected (selection; 14 in the full document)**
+**AI suggestions I changed or rejected (selection; 17 in the full document)**
 1. **Python + FastAPI**, proposed because it was the AI's own toolchain. Rejected: C#/.NET 8 plus MongoDB, which the AI had not proposed.
 2. **In-process Polly retries.** Replaced, with my approval, by retry state persisted in the job plus atomic leases (D24): retries survive restarts and never double-dispatch.
 3. **Binary GUIDs in MongoDB.** 11 failures against a real MongoDB showed id queries returning nothing; GUIDs are now stored as strings (D22).
 4. **Baking the corporate proxy's CA certificate into the image.** Rejected; added a host-publish, package-only Docker path instead.
 5. **API catching MongoDB driver exceptions.** Changed after my storage review into a storage-neutral `StorageUnavailableException` (D25).
 6. **Request logging on Serilog's static logger, and exception handling before the correlation middleware.** Both found by the logging tests I asked for (D-06, D-07) and fixed.
+7. **Authentication / authorization.** I asked for it, and the AI implemented API keys with roles and service identities, with 32 tests. I then **rolled it back**: it is explicitly not required, and every caller (reviewer, Postman, scripts, UI) would need keys. It is documented as a limitation with a production plan (D29).
 

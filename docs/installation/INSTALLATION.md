@@ -2,15 +2,15 @@
 
 | | |
 |---|---|
-| **System** | Job Service (:5001) · Processor Service (:5002) · Audit Service (:5003) · MongoDB (:27017) |
-| **Stack** | .NET 8 · ASP.NET Core · MongoDB 7 · Docker / Docker Compose |
+| **System** | Job Service (:5001) · Processor Service (:5002) · Audit Service (:5003) · MongoDB (:27017) · Web UI (:4200) |
+| **Stack** | .NET 8 · ASP.NET Core · MongoDB 7 · Angular 17 + nginx (Web UI) · Docker / Docker Compose |
 | **Repository** | https://github.com/orontamir/Ta9_Oron |
 | **Related documents** | `README.md` (overview) · `docs/hld/TA9-HLD.docx` (High-Level Design) · `docs/logging/TA9-Logging-Observability.docx` (logs in detail) |
 | **If something goes wrong** | **§5 Troubleshooting — where to look** (does not start · stuck · crashes) |
 
 ## 1. Overview
 
-The system consists of three ASP.NET Core services and a MongoDB database:
+The system consists of three ASP.NET Core services, a MongoDB database and an optional web console:
 
 | Component | Port | Purpose | Swagger |
 |---|---|---|---|
@@ -18,13 +18,14 @@ The system consists of three ASP.NET Core services and a MongoDB database:
 | Processor Service | 5002 | Internal API `/api/process`, document analysis | http://localhost:5002/swagger |
 | Audit Service | 5003 | `/api/audit`, summaries of finished jobs | http://localhost:5003/swagger |
 | MongoDB | 27017 | Storage for jobs, documents and audit entries; **logs of all services** (`ta9_logs.logs`) | — |
+| **Web UI** | 4200 | Angular console over the public API: jobs list, create, live progress, results, cancel / delete, audit entry. nginx serves it and proxies `/api` to the services | **http://localhost:4200** |
 
 There are three ways to run it:
 
 | Option | When to use | Section |
 |---|---|---|
 | **Docker Desktop** (recommended) | Demo, review, closest to production | §4 |
-| **Docker Desktop, prebuilt** | Networks with a TLS-inspecting proxy, where builds inside Docker cannot reach nuget.org | §4.6 |
+| **Docker Desktop, prebuilt** | Networks with a TLS-inspecting proxy, where builds inside Docker cannot reach nuget.org or npm | §4.6 |
 | **Local .NET** | Development and debugging | §3 |
 
 ## 2. Prerequisites
@@ -36,7 +37,7 @@ There are three ways to run it:
 | Operating system | Windows 10/11 (64-bit), macOS 12+, or Linux (x64/arm64) |
 | CPU / RAM | 2 cores / 8 GB RAM (Docker Desktop should get at least 4 GB) |
 | Disk | ~5 GB free (SDK, Docker images, MongoDB data) |
-| Free ports | 5001, 5002, 5003, 27017 |
+| Free ports | 5001, 5002, 5003, 27017, 4200 |
 
 ### 2.2 Software
 
@@ -45,6 +46,7 @@ There are three ways to run it:
 | **Git** | 2.40+ | Cloning the repository | https://git-scm.com/downloads |
 | **Docker Desktop** | 4.x (Docker Engine 24+, Compose v2) | Running the stack; integration tests (Testcontainers) | https://www.docker.com/products/docker-desktop |
 | **.NET 8 SDK** | 8.0.x | Local run, tests, prebuilt Docker path | https://dotnet.microsoft.com/download/dotnet/8.0 |
+| **Node.js** *(optional)* | 20 or 24 LTS (includes npm) | Only for developing or testing the Web UI locally. Not needed for Docker | https://nodejs.org |
 | PowerShell | 5.1+ (Windows) or 7+ | Helper scripts in `scripts/` | built in / https://aka.ms/powershell |
 | Postman *(optional)* | any | The ready-made collection in `docs/postman` | https://www.postman.com/downloads |
 | curl, jq *(optional)* | any | `scripts/smoke-test.sh`, SSE test | built in / package manager |
@@ -61,7 +63,7 @@ winget install Microsoft.DotNet.SDK.8
 
 ### 2.3 Network access
 
-The standard Docker build downloads from `mcr.microsoft.com` (base images), Docker Hub (`mongo:7.0`) and `api.nuget.org` (NuGet packages). Behind a corporate proxy that inspects TLS, use the prebuilt path (§4.6).
+The standard Docker build downloads from `mcr.microsoft.com` (base images), Docker Hub (`mongo:7.0`, `node:20-alpine`, `nginxinc/nginx-unprivileged`), `api.nuget.org` (NuGet packages) and `registry.npmjs.org` (UI packages). Behind a corporate proxy that inspects TLS, use the prebuilt path (§4.6): it needs neither NuGet nor npm inside Docker, and no npm at all.
 
 ### 2.4 Verify the prerequisites
 
@@ -130,7 +132,19 @@ curl.exe http://localhost:5003/health/ready     # Healthy
 powershell -ExecutionPolicy Bypass -File .\scripts\smoke-test.ps1
 ```
 
-### 3.5 Configuration reference
+### 3.5 Web UI (optional, development server)
+
+With the services running (§3.2 or §3.3), from the `ui` folder:
+
+```powershell
+npm ci              # once
+npm start           # http://localhost:4200, proxies /api/jobs → :5001 and /api/audit → :5003 (proxy.conf.json)
+npm run test:ci     # 21 component tests, headless Chrome
+```
+
+On Windows, if `npm` opens a "Select an app" dialog, see §6.8.
+
+### 3.6 Configuration reference
 
 All settings are in each service's `appsettings.json` and can be overridden with environment variables. Use `__` (double underscore) for nesting.
 
@@ -179,7 +193,7 @@ From the repository root:
 docker compose up --build -d
 ```
 
-The first build downloads the .NET SDK and runtime images and the NuGet packages, which takes a few minutes. Later builds reuse the cached restore layer.
+The first build downloads the .NET SDK and runtime images, the NuGet packages, and for the Web UI the Node image and the npm packages, which takes a few minutes. Later builds reuse the cached restore / install layers.
 
 ### 4.3 Verify
 
@@ -187,7 +201,7 @@ The first build downloads the .NET SDK and runtime images and the NuGet packages
 docker compose ps
 ```
 
-All four containers must show **(healthy)**:
+All five containers must show **(healthy)**:
 
 ```text
 NAME                      IMAGE                   STATUS                    PORTS
@@ -195,7 +209,10 @@ ta9-audit-service-1       ta9/audit-service       Up 18 seconds (healthy)   0.0.
 ta9-job-service-1         ta9/job-service         Up 17 seconds (healthy)   0.0.0.0:5001->8080/tcp
 ta9-mongo-1               mongo:7.0               Up 24 seconds (healthy)   0.0.0.0:27017->27017/tcp
 ta9-processor-service-1   ta9/processor-service   Up 12 seconds (healthy)   0.0.0.0:5002->8080/tcp
+ta9-ui-1                  ta9/ui                  Up 10 seconds (healthy)   0.0.0.0:4200->8080/tcp
 ```
+
+Open the **Web UI** at **http://localhost:4200**: *New job* → *Generate sample* (e.g. 100 documents) → *Create job*. The details page follows the job live ("● live") until *Completed*, then shows the results table and, a few seconds later, the audit entry.
 
 Then run the smoke test, which creates a job, waits for it to finish, and prints the results and the audit entry:
 
@@ -252,7 +269,7 @@ While the Job Service restarts, the processor logs `Job Service events connectio
 
 ### 4.6 Restricted networks — prebuilt images
 
-If the build fails with `NU1301` (see §6.1), publish the services on the host, where restore works, and let Docker only package the binaries:
+If the build fails with `NU1301` (see §6.1), or the UI build cannot download npm packages (§6.8), publish the services on the host, where restore works, and let Docker only package the binaries. The Web UI is not built at all on this path: Docker packages its committed production build, `ui/prebuilt`, so **no npm is needed**.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\docker-up-prebuilt.ps1
@@ -267,7 +284,7 @@ foreach ($p in "Ta9.JobService","Ta9.ProcessorService","Ta9.AuditService") {
 docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build -d
 ```
 
-It uses `Dockerfile.prebuilt`. The compose file, health checks and configuration are identical to the standard path. Verify as in §4.3.
+It uses `Dockerfile.prebuilt` (services) and `ui/Dockerfile.prebuilt` (packages `ui/prebuilt`). After changing the UI, refresh `ui/prebuilt` on a machine where npm works: `cd ui; npm ci; npm run build:prebuilt`. The compose file, health checks and configuration are identical to the standard path. Verify as in §4.3.
 
 ## 5. Troubleshooting — where to look
 
@@ -334,6 +351,7 @@ db.logs.find({ message: /^(Service started|Logging:)/ }).sort({ timestamp: -1 })
 | Build fails with `NU1301` | `docker compose up --build` output | TLS-inspecting proxy | §4.6 prebuilt images |
 | Processor `/health/ready` = `Degraded` | Processor log: `Job Service events connection failed (attempt N)` | Job Service not up yet / wrong `JobServiceEvents__Url` | Wait (it reconnects); check the URL |
 | `[ta9-log-sink] … could not store N log events` on stderr | Service console log | Log database unreachable; **the service itself still works** | Check `mongo`; `Logging__Mongo__ConnectionString` |
+| `ui` build fails (`npm ci` / `ng: not found` / SSL handshake) | `docker compose up --build` output | npm registry not reachable from Docker on this network | §6.8; use §4.6 (prebuilt, no npm) |
 
 ### 5.5 The system is stuck (jobs do not move)
 
@@ -348,6 +366,8 @@ Find where the job stopped. `GET /api/jobs/<id>` shows the status. The job's log
 | `Processing` after a processor restart | Job Service: `Processor no longer knows job …; redispatching` / `Reconciliation: …` | Reconciler recovers the job within ~1–2 minutes (`Reconcile__StaleAfter`) | Wait; after 3 redispatches the job is Failed |
 | Finished, but no audit entry | Job Service: `Audit service unavailable; retrying in …` | Audit Service down; summaries are kept and sent later | `docker compose ps audit-service`; audit logs |
 | API calls return `503 Storage unavailable` | Job Service: `Request failed: Storage unavailable` (Error) | MongoDB unreachable | `docker compose ps mongo`; `docker compose logs mongo` |
+| Web UI shows "The service cannot be reached" or `502 Bad Gateway` | `docker compose logs ui` (nginx) and `docker compose ps job-service audit-service` | nginx cannot reach a service (not started, unhealthy, restarting) | Start / fix the service; the UI recovers on the next refresh |
+| Web UI details page never shows "● live" / progress does not move | Browser developer tools → Network → `events` (EventSource) | SSE blocked by a proxy in front of the UI, or the job is already finished | The bundled nginx streams SSE (`proxy_buffering off`); an extra proxy must do the same. The page still updates on reload |
 
 ### 5.6 A service crashes or keeps restarting
 
@@ -499,10 +519,21 @@ Environment variables such as `GIT_AUTHOR_EMAIL` override `git config`. If they 
 | Integration tests fail with `Docker is either not running or misconfigured` | Testcontainers needs Docker Desktop running, or run `dotnet test --filter "Category!=Integration"` |
 | `fatal: detected dubious ownership in repository` | Repository on a network share: `git config --global --add safe.directory '<path>'` |
 
+### 6.8 Web UI: npm and build problems
+
+| Message | Cause | Fix |
+|---|---|---|
+| Docker build: `npx ng build` → `request to https://registry.npmjs.org/ng failed … SSL alert handshake failure` | `npx` looked for a package called `ng` instead of using the local Angular CLI, and the registry is blocked | Fixed in the Dockerfile: the local CLI is called directly (`node node_modules/@angular/cli/bin/ng.js build`) |
+| Docker build: `sh: ng: not found` / *"npm install incomplete"* | `npm ci` could not download every package (TLS inspection) | Use the prebuilt path (§4.6), which needs no npm |
+| `npm ci` on the host: `ERR_SSL_SSL/TLS_ALERT_HANDSHAKE_FAILURE … websocket-driver-0.7.5.tgz` (followed by `EPERM … Failed to remove some directories`) | The network blocks some npm downloads; the `EPERM` lines are only npm's cleanup after the failure | Use the prebuilt path (§4.6); or ask IT for the organization's npm registry and set it on your machine only (`npm config set registry <address>`) |
+| Typing `npm` opens a Windows **"Select an app to open 'npm'"** dialog | PowerShell found the extension-less `npm` shell script instead of `npm.cmd` / `npm.ps1` (scripts blocked, or `.CMD` missing from `PATHEXT`) | Use `npm.cmd`, or `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` and a new PowerShell; check that `$env:PATHEXT` contains `.CMD`. The helper script already uses `npm.cmd` |
+| `npm -v` prints nothing | npm is missing from the Node installation | Reinstall Node.js LTS from nodejs.org with *npm package manager* selected |
+| `The Angular CLI requires…` / unsupported Node warning | Angular 17 officially lists Node 18 / 20 | Node 24 works (tested); the warning can be ignored |
+
 ## 7. Uninstall
 
 ```powershell
 docker compose down -v                      # remove containers, network and MongoDB volume
-docker image rm ta9/job-service ta9/processor-service ta9/audit-service
+docker image rm ta9/job-service ta9/processor-service ta9/audit-service ta9/ui
 docker rm -f ta9-mongo                      # only if started manually in §3.2
 ```

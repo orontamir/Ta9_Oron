@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Document** | Software Test Description (STD) |
-| **System** | TA9 Document Processing — Job Service · Processor Service · Audit Service |
-| **Test framework** | xUnit 2.9 · FluentAssertions 7 · NSubstitute · ASP.NET Core TestServer · Testcontainers (MongoDB 7) |
-| **Automated tests** | 311 test methods → **440 executions** (theories and dual-store contract suites expanded) |
+| **System** | TA9 Document Processing — Job Service · Processor Service · Audit Service · Web UI |
+| **Test framework** | Services: xUnit 2.9 · FluentAssertions 7 · NSubstitute · ASP.NET Core TestServer · Testcontainers (MongoDB 7). Web UI: Jasmine 5 · Karma 6 · Angular TestBed · headless Chrome |
+| **Automated tests** | Services: 311 test methods → **440 executions** (theories and dual-store contract suites expanded). Web UI: **21** tests. Total **461** |
 | **Related documents** | `docs/hld/TA9-HLD.docx` (design) · `docs/installation/TA9-Installation-Guide.docx` (environment) · `README.md` |
 
 ## 1. Introduction
@@ -15,7 +15,8 @@ This document describes how the TA9 Document Processing System is verified. It l
 
 ### 1.2 Scope
 - **In scope:** functional behavior of the three services, the REST / WebSocket / SSE contracts, concurrency limits and the performance scenario (10 concurrent jobs × 1,000 documents), reliability (invalid input, unreachable services, restarts, lost or duplicate events, storage failures), storage replaceability, observability hooks, deployment (Docker Compose).
-- **Out of scope:** security/penetration testing, long-duration soak tests, multi-instance deployments, UI testing (there is no UI).
+- **In scope (Web UI):** the Angular console's API client, screens and validation hints (component tests), and a manual walkthrough on the deployed stack.
+- **Out of scope:** security/penetration testing, long-duration soak tests, multi-instance deployments, automated browser end-to-end tests of the UI (see §10).
 
 ### 1.3 Terms
 | Term | Meaning |
@@ -25,6 +26,7 @@ This document describes how the TA9 Document Processing System is verified. It l
 | TestServer | In-memory ASP.NET Core host: the full HTTP / WebSocket pipeline without opening ports |
 | Testcontainers | Starts a real MongoDB in Docker for the duration of the tests |
 | E2E | End-to-end test with all services running together |
+| TestBed | Angular's test host: renders a component with its template and fake dependencies |
 
 ## 2. Test strategy
 
@@ -35,6 +37,7 @@ This document describes how the TA9 Document Processing System is verified. It l
 | **Component** | A service's real pipeline: REST, WebSocket, SSE, middleware, DI, validation, error mapping | WebApplicationFactory / TestServer, real WebSocket clients, log capture; the Mongo log writer against a MongoDB container | 66 / 69 |
 | **Contract** | That every storage implementation behaves identically | Same abstract suite against InMemory and real MongoDB (Testcontainers) | 21 / 42 |
 | **Integration (E2E)** | The whole system working together, including failure scenarios and the performance requirement | Three services in-process, real WebSocket, MongoDB container | 6 / 6 |
+| **UI component** | The Web UI's API client (URLs, parameters, error handling) and screens (rendering, validation, actions) | Jasmine + Karma in headless Chrome; `HttpTestingController`, spy APIs, fake timers | 21 / 21 |
 | **Manual / system** | Deployed stack in Docker Desktop, API exploration, load and resilience | Smoke-test scripts, Postman collection, Swagger, curl, docker compose | §8 |
 
 ### 2.2 Techniques and test doubles
@@ -63,8 +66,9 @@ This document describes how the TA9 Document Processing System is verified. It l
 | OS | Windows 11 workstation (development and execution); Linux containers in Docker Desktop |
 | Runtime / SDK | .NET 8 SDK 8.0.x |
 | Containers | Docker Desktop 4.x; images `mongo:7.0`, `testcontainers/ryuk` (pulled automatically) |
-| IDE / runner | `dotnet test` (VSTest adapter for xUnit 2.8) |
-| Manual tools | PowerShell 5.1, curl, Postman, Swagger UI |
+| IDE / runner | `dotnet test` (VSTest adapter for xUnit 2.8); Web UI: `npm run test:ci` (Karma, headless Chrome) |
+| Web UI | Node.js 20–24, Angular 17.3, Chrome / Edge |
+| Manual tools | PowerShell 5.1, curl, Postman, Swagger UI, the Web UI (http://localhost:4200) |
 
 ### 3.1 How to run
 
@@ -73,6 +77,7 @@ dotnet test Ta9.sln                                     # all tests (Docker Desk
 dotnet test Ta9.sln --filter "Category!=Integration"    # no Docker needed
 dotnet test tests/Ta9.IntegrationTests --logger "console;verbosity=detailed"   # E2E incl. performance output
 dotnet test Ta9.sln --filter "FullyQualifiedName~JobDispatcherTests"          # one class
+cd ui; npm ci; npm run test:ci                                                 # Web UI tests (headless Chrome)
 ```
 
 ## 4. Test summary
@@ -83,12 +88,15 @@ dotnet test Ta9.sln --filter "FullyQualifiedName~JobDispatcherTests"          # 
 | Ta9.JobService.Tests | 22 | 152 | 241 |
 | Ta9.AuditService.Tests | 4 | 12 | 18 |
 | Ta9.IntegrationTests | 1 | 6 | 6 |
-| **Total** | **51** | **311** | **440** |
+| ta9-ui (Angular, Karma) | 6 | 21 | 21 |
+| **Total** | **57** | **332** | **461** |
 
 ### 4.1 Latest execution results
 | Run | Result |
 |---|---|
 | Automated suite — `dotnet test Ta9.sln` (Windows 11, Docker Desktop, 2026-10-27) | **440 passed, 0 failed, 0 skipped** (≈ 24 s); 311 test methods, including the 33 logging tests |
+| Web UI — `npm run test:ci` (headless Chrome 151, Node 24, 2026-10-27) | **21 passed, 0 failed** |
+| Web UI on Docker Desktop (prebuilt path) — MT-12 | **Passed**: list, create, live progress, results and audit entry |
 | Docker Compose deployment — `docker compose ps` | All 4 containers **healthy** |
 | Smoke test — 1 job × 3 documents | **Passed** — Completed, 3/3 succeeded, audit entry recorded |
 | Load scenario — 10 jobs × 1,000 documents (`smoke-test.ps1 -Jobs 10 -Documents 1000`) | **Passed** — every job shown Completed with 1000/1000 succeeded (console output was truncated after the 7th job) |
@@ -121,6 +129,7 @@ Requirements are taken from the home assignment (§3–§7 and the bonus §12).
 | R16 | Real-time status for clients (SSE) | `JobEventsApiTests`, `InMemoryJobUpdateBroadcasterTests`, `BroadcastingJobRepositoryTests` | MT-10 |
 | R17 | Logging & observability: console + MongoDB, Debug/Information/Error levels, correlation id, health checks | `BatchingLogSinkTests`, `LogRecordTests`, `ServiceLoggingPipelineTests`, `MongoLogBatchWriterTests`, `JobDispatcherLoggingTests`, `JobRunnerLoggingTests`, `JobsApiLoggingTests`, `AuditApiLoggingTests`, `EndToEndTests`, `CorrelationTests`, `CorrelationIdMiddlewareTests`, `CorrelationIdHandlerTests` | MT-01, MT-11 |
 | R18 | Bonus: Audit Service `POST /api/audit`, `GET /api/audit/{jobId}` | `AuditApiTests`, `AuditRepositoryContract`, `AuditPublisherTests`, `HttpAuditClientTests`, `EndToEndTests` | MT-02 |
+| R19 | Optional (§11): Frontend / UI wrapping the REST API | `JobsApi`, `describeError`, `JobsListComponent`, `JobCreateComponent`, `JobDetailComponent`, `ProgressBarComponent` (UI-001…UI-021) | MT-12 |
 
 ## 7. Automated test case catalog
 Section-specific subsets of this catalog, with the same IDs, appear in the topic documents: `docs/concurrency/TA9-Concurrency-Performance.docx` (§4 Concurrency & Performance, chapter 7) `docs/websocket/TA9-WebSocket-Behavior.docx` (WebSocket disconnect/reconnect, chapter 5) `docs/storage/TA9-Storage.docx` (§6 Storage, chapter 7) and `docs/logging/TA9-Logging-Observability.docx` (§7 Logging & Observability, chapter 5).
@@ -856,6 +865,77 @@ Job, Processor and Audit services in-process over REST + real WebSocket + MongoD
 | E2E-005 | Cancelling a running job stops it on the processor | Fact |
 | E2E-006 | Job flow is logged to mongodb by all three services under one correlation id | Fact |
 
+### 7.6 Web UI (ui/, Jasmine + Karma)
+
+#### JobsApi
+**Level:** UI component · **Under test:** `api/jobs-api.service.ts`
+
+REST URLs, methods and query parameters (HttpTestingController); a missing audit entry is null, other errors propagate.
+
+| ID | Test case | Kind |
+|---|---|---|
+| UI-001 | Lists jobs with paging and an optional status filter | it |
+| UI-002 | Omits the status filter when none is chosen | it |
+| UI-003 | Creates a job with POST /api/jobs | it |
+| UI-004 | Cancels with POST /cancel and deletes with DELETE | it |
+| UI-005 | Pages results | it |
+| UI-006 | Returns null for an audit entry that is not recorded yet (404) | it |
+| UI-007 | Propagates other audit errors | it |
+
+#### describeError
+**Level:** UI component · **Under test:** `api/problem.ts`
+
+ProblemDetails / ValidationProblemDetails turned into one readable message.
+
+| ID | Test case | Kind |
+|---|---|---|
+| UI-008 | Uses the ProblemDetails title and the field errors of a 400 | it |
+| UI-009 | Prefers the detail of a ProblemDetails | it |
+| UI-010 | Explains an unreachable service | it |
+
+#### JobCreateComponent
+**Level:** UI component · **Under test:** New job screen
+
+Submits trimmed name + documents and opens the job; client-side hints block invalid input; sample generator capped at 1,000; server validation shown.
+
+| ID | Test case | Kind |
+|---|---|---|
+| UI-011 | Submits the name and documents and opens the new job | it |
+| UI-012 | Does not submit while there are problems | it |
+| UI-013 | Generates up to 1,000 sample documents | it |
+| UI-014 | Shows the server validation message | it |
+
+#### JobDetailComponent
+**Level:** UI component · **Under test:** Job details screen
+
+Live updates (SSE) while running; results and audit entry when completed; failure reason when failed; which actions are offered.
+
+| ID | Test case | Kind |
+|---|---|---|
+| UI-015 | Follows a running job live and offers cancel, not delete | it |
+| UI-016 | Shows the results and the audit entry of a completed job | it |
+| UI-017 | Shows the failure reason of a failed job | it |
+
+#### JobsListComponent
+**Level:** UI component · **Under test:** Jobs screen
+
+One row per job with its status badge and paging; the status filter reloads from page 1.
+
+| ID | Test case | Kind |
+|---|---|---|
+| UI-018 | Shows one row per job with its status | it |
+| UI-019 | Reloads from page 1 with the chosen status | it |
+
+#### ProgressBarComponent
+**Level:** UI component · **Under test:** Progress bar
+
+Rounded percentage and label; empty job.
+
+| ID | Test case | Kind |
+|---|---|---|
+| UI-020 | Computes a rounded percentage and a label | it |
+| UI-021 | Shows 0% for an empty job | it |
+
 ## 8. Manual and system test procedures
 Executed against the stack deployed with Docker Desktop (Installation Guide §4).
 
@@ -872,6 +952,7 @@ Executed against the stack deployed with Docker Desktop (Installation Guide §4)
 | MT-09 | Storage outage | MT-01 passed | 1) `docker compose stop mongo` 2) `GET /api/jobs` and `/health/ready` on :5001 3) `docker compose start mongo` | 503 *Storage unavailable* ProblemDetails within ~5 s; readiness Unhealthy; service recovers after Mongo starts | Not yet executed |
 | MT-10 | Live status stream (SSE) | MT-01 passed | 1) Create a job 2) `curl.exe -N http://localhost:5001/api/jobs/<id>/events` | `event: status` lines: snapshot, then Processing with progress, then Completed; stream closes | Not yet executed |
 | MT-11 | Logs in console and MongoDB | MT-02 passed | 1) `docker compose logs --tail 50 job-service processor-service` 2) `docker exec -it ta9-mongo-1 mongosh ta9_logs --eval "db.logs.find({jobId:'<id>'}).sort({timestamp:1})"` with the job id from MT-02 3) `db.logs.find({level:'Error'})` | Console shows the flow (Information); MongoDB holds Debug + Information records of all three services for the job with one `correlationId`; TTL index `ttl_timestamp` exists | Not yet executed |
+| MT-12 | Web UI walkthrough | Stack up incl. `ui` (`docker compose up --build -d`, or `scripts/docker-up-prebuilt.ps1`) | 1) Open http://localhost:4200 2) *New job* → *Generate sample* (100) → *Create job* 3) Watch the details page 4) Back to *Jobs*, filter by *Completed* | Job appears; progress moves live ("● live"), ends *Completed*; results table with top words and SHA-256; audit entry shown after a few seconds; filter and paging work | Passed (2026-10-27) |
 
 ## 9. Defects found by testing
 Defects detected by the automated tests during development; all fixed before submission.
@@ -885,9 +966,11 @@ Defects detected by the automated tests during development; all fixed before sub
 | D-05 | Manual MT-02 | Smoke test printed `Created  job(s)` without the count | Windows PowerShell 5.1 has no `.Count` on a single object | Result wrapped in `@()` — **Fixed** |
 | D-06 | `ServiceLoggingPipelineTests`, `JobsApiLoggingTests` (3 failures) | The one-line-per-request log (`HTTP POST /api/jobs responded 201 …`) never appeared, neither on the console nor in MongoDB | Serilog's request-logging middleware writes to the static `Log.Logger` by default; each host keeps its own logger (`preserveStaticLogger`), so the static one is silent | `options.Logger` set to the host's Serilog logger — **Fixed** |
 | D-07 | `ServiceLoggingPipelineTests`, `JobsApiStorageFailureTests` (2 failures) | Error lines of failed requests (unhandled exception, `Request failed: Storage unavailable`) had no correlation id | `UseExceptionHandler` ran before the correlation middleware, outside its scope | Correlation middleware moved first in the pipeline — **Fixed** |
+| D-08 | Manual MT-12 (Docker build of `ui`) | Docker build of the UI failed: `npx ng build` tried to download a package named `ng` from the npm registry | `npx` does not reliably resolve the local CLI binary inside the build | Build calls the local CLI directly (`node node_modules/@angular/cli/bin/ng.js build`) and verifies the install first — **Fixed** |
 
 ## 10. Risks and limitations of the test approach
 - Performance is verified functionally (completion, exactly-once analysis, concurrency bound) and timed manually; there is no automated latency/throughput threshold or long-running soak test.
 - Multi-instance behavior (several Job Service instances) is covered only at the storage level (atomic claims, optimistic concurrency); SSE fan-out across instances is not tested because it is not supported.
 - E2E tests run the services in one process on TestServer; network faults between containers are exercised manually (MT-07 to MT-09).
 - Security testing is out of scope (no authentication by assignment).
+- The Web UI is covered by component tests and a manual walkthrough; there are no automated browser end-to-end tests (e.g. Playwright) of the UI against the running stack.

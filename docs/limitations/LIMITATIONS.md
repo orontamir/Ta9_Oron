@@ -9,7 +9,7 @@
 
 ## 1. Context: what the submission is and is not
 
-The system was built for a home assignment with an 8–10 hour time-box. The assignment explicitly excluded authentication, a UI, Kubernetes, message brokers and CI/CD. The design goal was therefore:
+The system was built for a home assignment with an 8–10 hour time-box. The assignment listed authentication, a frontend, Kubernetes, message brokers and CI/CD as not required. A small web UI was added (D28); authentication was built and then deliberately rolled back (D29). The design goal was therefore:
 
 - **Correct and reliable at the required scale:** 10 concurrent jobs × 1,000 documents. Events are never lost or applied twice, and the system survives restarts and outages of any single component.
 - **Honest about its limits:** every shortcut is deliberate, documented, and has a known upgrade path.
@@ -66,7 +66,7 @@ Each limitation has an ID (area prefix + number) that the roadmap (§3) refers t
 
 | ID | Limitation | Impact | Mitigation today | Production improvement |
 |---|---|---|---|---|
-| SE-1 | **No authentication or authorization** (out of scope by assignment) | Anyone who reaches the API can create, read, cancel and delete any job | Local deployment only | **API gateway** with OAuth2/OIDC (JWT); per-tenant authorization on every job |
+| SE-1 | **No authentication or authorization** (out of scope by assignment) | Anyone who reaches the API can create, read, cancel and delete any job | Local deployment only. An API-key implementation (roles reader / operator, service identities, 32 tests) was built and rolled back, to keep the solution simple to run and review (D29) | **API gateway** with OAuth2/OIDC (JWT); per-tenant authorization on every job |
 | SE-2 | **Unauthenticated service-to-service traffic** (REST dispatch, WebSocket events, audit) | A rogue client on the network could send forged events | Internal Docker network; correlation ids validated | **mTLS** between services (service mesh) or signed service tokens on connect |
 | SE-3 | **No rate limiting or quotas** | One client can fill the queue for everyone | Bounded queue + 503 protects the services, not fairness between clients | Rate limiting at the gateway and per-tenant quotas |
 | SE-4 | **Swagger enabled in every environment; health endpoints public** | API surface and internals exposed | POC convenience | Swagger only in Development; health endpoints on an internal port |
@@ -85,7 +85,18 @@ Input-side protections already in place: size limits on requests, documents and 
 | API-4 | **Completion only by polling or SSE** | No push to the client's own systems | SSE stream per job | Webhooks / callbacks with retries and signatures |
 | API-5 | **Results are kept until the job is deleted** | Storage grows; old results remain readable forever | Delete endpoint | Retention (ST-2), result expiry policy |
 
-### 2.7 Operations and delivery (OP)
+### 2.7 Web UI (UI)
+
+| ID | Limitation | Impact | Mitigation today | Production improvement |
+|---|---|---|---|---|
+| UI-1 | **Angular 17 is past its official support** | No more security fixes from the Angular team | Small app, few dependencies, no UI library | Upgrade to the current Angular (mostly mechanical: same standalone + signals style) |
+| UI-2 | **No browser end-to-end tests** | A broken screen against the real API would be found only manually | 21 component tests (API client, screens, validation); manual walkthrough MT-12 | Playwright tests against the Docker stack in CI |
+| UI-3 | **Committed build output (`ui/prebuilt`)** for networks that block npm | It must be refreshed by hand after UI changes, or it goes stale | Only the prebuilt path uses it; the normal Docker build compiles from source | Build the UI in CI and publish the image; drop the committed build |
+| UI-4 | **Jobs list polls every 3 s** | Extra requests while the page is open | Only the list polls; the details page uses SSE | A list-level SSE stream, or poll only while jobs are active |
+| UI-5 | **No login** (follows SE-1) | Anyone who reaches port 4200 can use the console | Local deployment only | OIDC login through the API gateway |
+| UI-6 | **Large jobs are sent in one request** | Up to ~10 MB from the browser in one POST | Server limits enforced and shown as clear errors | Upload documents to object storage first (API-3) |
+
+### 2.8 Operations and delivery (OP)
 
 | ID | Limitation | Impact | Mitigation today | Production improvement |
 |---|---|---|---|---|
@@ -102,7 +113,7 @@ Input-side protections already in place: size limits on requests, documents and 
 ### P1 — before any production traffic
 | Step | Addresses | Notes |
 |---|---|---|
-| Authentication at an API gateway (OIDC/JWT), per-tenant authorization | SE-1, SE-4, SE-5 | Gateway also terminates TLS |
+| Authentication at an API gateway (OIDC/JWT), per-tenant authorization | SE-1, SE-4, SE-5, UI-5 | Gateway also terminates TLS; the UI logs in through it |
 | mTLS between services | SE-2, SE-5 | Service mesh or certificates per service |
 | MongoDB replica set with auth, TLS, encryption at rest, backups | ST-1, RE-5 | Also enables transactions |
 | Rate limiting and per-tenant quotas | SE-3 | At the gateway |
@@ -121,7 +132,7 @@ Input-side protections already in place: size limits on requests, documents and 
 | Retention policies for jobs, documents and results | ST-2, API-5 | TTL or archival |
 
 ### P3 — refinements
-Keyset paging (SC-6) · circuit breakers (RE-8) · maximum job age (RE-4) · runtime log levels (LG-4) · API versioning (API-2) · webhooks (API-4) · load and chaos tests in CI (SC-7, OP-4) · 503 mapping in the Audit Service (RE-7) · private setters / persistence model (ST-4) · central configuration (OP-5).
+Angular upgrade and browser end-to-end tests (UI-1, UI-2) · UI image built in CI (UI-3) · keyset paging (SC-6) · circuit breakers (RE-8) · maximum job age (RE-4) · runtime log levels (LG-4) · API versioning (API-2) · webhooks (API-4) · load and chaos tests in CI (SC-7, OP-4) · 503 mapping in the Audit Service (RE-7) · private setters / persistence model (ST-4) · central configuration (OP-5).
 
 ## 4. Why the current design makes these steps cheap
 
