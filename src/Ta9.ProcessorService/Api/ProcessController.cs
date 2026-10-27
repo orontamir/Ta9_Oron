@@ -1,12 +1,15 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Ta9.Contracts.Processing;
 using Ta9.ProcessorService.Application;
+using Ta9.ServiceDefaults.Security;
 
 namespace Ta9.ProcessorService.Api;
 
 [ApiController]
 [Route("api/process")]
+[Authorize(Policy = AuthPolicies.Service)]
 public sealed class ProcessController(ProcessingService processing, IOptions<ProcessingOptions> options) : ControllerBase
 {
     /// <summary>Enqueues a job for processing. Idempotent by jobId.</summary>

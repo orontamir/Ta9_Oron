@@ -9,6 +9,7 @@ using Ta9.IntegrationTests.Infrastructure;
 using Ta9.JobService.Api;
 using Ta9.JobService.Application;
 using Ta9.JobService.Domain;
+using Ta9.Tests.Shared;
 using Xunit.Abstractions;
 
 namespace Ta9.IntegrationTests;
@@ -102,6 +103,23 @@ public sealed class EndToEndTests(MongoContainerFixture mongo, ITestOutputHelper
             .Should().ContainSingle("one correlation id follows the job through all three services");
         logs.Where(r => r["level"] != "Debug").Should().OnlyContain(r => r.Contains("correlationId"));
         output.WriteLine(string.Join(Environment.NewLine, logs.Select(r => $"{r["timestamp"]} {r["level"],-11} {Message(r)}")));
+    }
+
+    [Fact]
+    public async Task Services_authenticate_to_each_other_and_anonymous_callers_are_rejected()
+    {
+        await using var system = Ta9System.Start(mongo.ConnectionString);
+
+        // The whole flow needs the service keys: dispatch (Job → Processor), events (Processor → Job), audit (Job → Audit).
+        var created = await system.CreateJobAsync(["alpha beta"]);
+        (await system.WaitForStatusAsync(created.Id, Timeout, Terminal)).Status.Should().Be(JobStatus.Completed);
+        await EventuallyAsync(() => TryGetAuditAsync(system, created.Id), Timeout);
+
+        using var anonymousJobs = system.Jobs.CreateClient();
+        using var anonymousAudit = system.Audit.CreateClient();
+        (await anonymousJobs.GetAsync($"/api/jobs/{created.Id}")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await anonymousAudit.GetAsync($"/api/audit/{created.Id}")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await system.ProcessorApi.WithApiKey(null).GetAsync("/api/process")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     [Fact]

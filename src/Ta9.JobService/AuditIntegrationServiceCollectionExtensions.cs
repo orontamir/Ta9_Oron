@@ -2,6 +2,7 @@ using Microsoft.Extensions.Options;
 using Ta9.JobService.Application;
 using Ta9.JobService.Infrastructure.Audit;
 using Ta9.ServiceDefaults;
+using Ta9.ServiceDefaults.Security;
 
 namespace Ta9.JobService;
 
@@ -21,7 +22,8 @@ public static class AuditIntegrationServiceCollectionExtensions
                 http.BaseAddress = audit.BaseUrl;
                 http.Timeout = audit.RequestTimeout;
             })
-            .AddCorrelationIdPropagation();
+            .AddCorrelationIdPropagation()
+            .AddApiKey(keys => keys.JobServiceKey);
 
         services.AddSingleton<IAuditClient, HttpAuditClient>();
         services.AddSingleton<AuditPublisher>();

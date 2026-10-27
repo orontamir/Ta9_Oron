@@ -15,6 +15,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed for $project" }
     }
 
+    & (Join-Path $PSScriptRoot "keys.ps1")   # creates .env with the API keys if it does not exist yet
     docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build -d
     if ($LASTEXITCODE -ne 0) { throw "docker compose failed" }
     docker compose ps

@@ -25,6 +25,7 @@ public sealed class ProcessApiTests : IDisposable
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             Logs.AttachTo(builder);
+            TestApiKeys.Apply(builder);
             foreach (var (key, value) in settings)
             {
                 builder.UseSetting(key, value);
@@ -36,7 +37,7 @@ public sealed class ProcessApiTests : IDisposable
             }
         });
         _disposables.Add(factory);
-        var client = factory.CreateClient();
+        var client = factory.CreateClient().WithApiKey(TestApiKeys.JobService); // only the Job Service may call /api/process
         _disposables.Add(client);
         return client;
     }
@@ -48,6 +49,32 @@ public sealed class ProcessApiTests : IDisposable
         Eventually.MatchAsync(
             async () => (await client.GetFromJsonAsync<ProcessJobStatusResponse>($"/api/process/{jobId}"))!,
             response => response.Status == status);
+
+    [Fact]
+    public async Task Request_without_a_key_is_401()
+    {
+        var client = CreateClient().WithApiKey(null);
+
+        (await client.PostAsJsonAsync("/api/process", Request())).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await client.GetAsync("/api/process")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Client_keys_are_not_accepted_by_the_processor()
+    {
+        var client = CreateClient();
+
+        (await client.WithApiKey(TestApiKeys.Operator).PostAsJsonAsync("/api/process", Request())).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await client.WithApiKey(TestApiKeys.ProcessorService).GetAsync("/api/process")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Job_service_key_may_submit_work()
+    {
+        var response = await CreateClient().PostAsJsonAsync("/api/process", Request());
+
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+    }
 
     [Fact]
     public async Task Post_accepts_job_and_results_become_available()

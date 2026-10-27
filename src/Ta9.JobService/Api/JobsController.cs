@@ -1,18 +1,22 @@
 using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Ta9.JobService.Application;
 using Ta9.JobService.Domain;
+using Ta9.ServiceDefaults.Security;
 
 namespace Ta9.JobService.Api;
 
 [ApiController]
 [Route("api/jobs")]
+[Authorize(Policy = AuthPolicies.Read)]
 public sealed class JobsController(JobManager jobs, JobEventStream eventStream) : ControllerBase
 {
     public const long MaxRequestBytes = 10 * 1024 * 1024;
 
     /// <summary>Submits a job. It is processed asynchronously; poll GET /api/jobs/{id} or subscribe to its events.</summary>
     [HttpPost]
+    [Authorize(Policy = AuthPolicies.Write)]
     [RequestSizeLimit(MaxRequestBytes)]
     [ProducesResponseType<JobResponse>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -97,6 +101,7 @@ public sealed class JobsController(JobManager jobs, JobEventStream eventStream) 
 
     /// <summary>Cancels a pending, queued or processing job. Idempotent.</summary>
     [HttpPost("{id:guid}/cancel")]
+    [Authorize(Policy = AuthPolicies.Write)]
     [ProducesResponseType<JobResponse>(StatusCodes.Status202Accepted)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
@@ -116,6 +121,7 @@ public sealed class JobsController(JobManager jobs, JobEventStream eventStream) 
 
     /// <summary>Deletes a finished (completed, failed or cancelled) job and its documents.</summary>
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = AuthPolicies.Write)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]

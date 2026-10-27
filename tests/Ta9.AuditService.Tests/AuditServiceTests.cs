@@ -31,13 +31,47 @@ public sealed class AuditApiFactory : WebApplicationFactory<Program>
     {
         builder.UseSetting("Storage:Provider", "InMemory");
         Logs.AttachTo(builder);
+        TestApiKeys.Apply(builder);
+    }
+
+    /// <summary>POSTs as the Job Service (the only writer), GETs as a reader client.</summary>
+    public HttpClient CreateAuthorizedClient() =>
+        CreateDefaultClient(new KeyByMethodHandler(writeKey: TestApiKeys.JobService, readKey: TestApiKeys.Reader));
+}
+
+/// <summary>Only the Job Service records entries; clients read them.</summary>
+public sealed class AuditApiAuthTests(AuditApiFactory factory) : IClassFixture<AuditApiFactory>
+{
+    private HttpClient Client(string? key) => factory.CreateClient().WithApiKey(key);
+
+    [Fact]
+    public async Task Request_without_a_key_is_401()
+    {
+        (await Client(null).PostAsJsonAsync("/api/audit", AuditTestData.Request())).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await Client(null).GetAsync($"/api/audit/{Guid.NewGuid()}")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Clients_cannot_record_entries()
+    {
+        (await Client(TestApiKeys.Operator).PostAsJsonAsync("/api/audit", AuditTestData.Request())).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Job_service_records_and_a_reader_reads_but_not_the_other_way_round()
+    {
+        var request = AuditTestData.Request();
+
+        (await Client(TestApiKeys.JobService).PostAsJsonAsync("/api/audit", request)).StatusCode.Should().Be(HttpStatusCode.Created);
+        (await Client(TestApiKeys.Reader).GetAsync($"/api/audit/{request.JobId}")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await Client(TestApiKeys.JobService).GetAsync($"/api/audit/{request.JobId}")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 }
 
 /// <summary>The Audit Service's real logging pipeline: what recording a summary leaves in the log store.</summary>
 public sealed class AuditApiLoggingTests(AuditApiFactory factory) : IClassFixture<AuditApiFactory>
 {
-    private readonly HttpClient _client = factory.CreateClient();
+    private readonly HttpClient _client = factory.CreateAuthorizedClient();
 
     [Fact]
     public async Task Recording_logs_information_and_a_duplicate_logs_debug()
@@ -58,7 +92,7 @@ public sealed class AuditApiLoggingTests(AuditApiFactory factory) : IClassFixtur
 
 public sealed class AuditApiTests(AuditApiFactory factory) : IClassFixture<AuditApiFactory>
 {
-    private readonly HttpClient _client = factory.CreateClient();
+    private readonly HttpClient _client = factory.CreateAuthorizedClient();
 
     [Fact]
     public async Task Records_a_summary_and_returns_it()

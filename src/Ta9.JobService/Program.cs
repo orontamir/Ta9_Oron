@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using Ta9.JobService.Api;
 using Ta9.JobService.Application;
 using Ta9.ServiceDefaults;
+using Ta9.ServiceDefaults.Security;
 
 namespace Ta9.JobService;
 
@@ -11,6 +12,8 @@ public class Program
     {
         var builder = WebApplication.CreateBuilder(args);
         builder.AddServiceDefaults("job-service");
+        // Clients (reader / operator) and the Processor (WebSocket events).
+        builder.AddApiKeyAuthentication(Caller.Reader, Caller.Operator, Caller.ProcessorService);
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddJobStorage(builder.Configuration);
         builder.Services.AddProcessorIntegration(builder.Configuration);
@@ -26,13 +29,14 @@ public class Program
             .AddControllers(o => o.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true)
             .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
         builder.Services.AddEndpointsApiExplorer();
-        builder.Services.AddSwaggerGen();
+        builder.Services.AddSwaggerWithApiKey();
 
         var app = builder.Build();
 
         app.UseServiceDefaults();
         app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(15) });
-        app.Map(ProcessorEventsEndpoint.Path, (RequestDelegate)app.Services.GetRequiredService<ProcessorEventsEndpoint>().HandleAsync);
+        app.Map(ProcessorEventsEndpoint.Path, (RequestDelegate)app.Services.GetRequiredService<ProcessorEventsEndpoint>().HandleAsync)
+            .RequireAuthorization(AuthPolicies.Service);
         app.UseSwagger();
         app.UseSwaggerUI();
         app.MapControllers();

@@ -8,6 +8,8 @@ using Ta9.JobService.Application;
 using Ta9.JobService.Domain;
 using Ta9.JobService.Tests.Application;
 using Ta9.JobService.Tests.TestSupport;
+using Ta9.ServiceDefaults.Security;
+using Ta9.Tests.Shared;
 
 namespace Ta9.JobService.Tests.Api;
 
@@ -20,8 +22,16 @@ public sealed class ProcessorEventsEndpointTests : IClassFixture<JobServiceFacto
 
     public ProcessorEventsEndpointTests(JobServiceFactory factory) => _factory = factory;
 
+    /// <summary>A WebSocket client that presents the Processor's key, as the real processor does.</summary>
+    private static WebSocketClient ProcessorSocket(TestServer server)
+    {
+        var client = server.CreateWebSocketClient();
+        client.ConfigureRequest = request => request.Headers[ApiKeyAuthenticationHandler.HeaderName] = TestApiKeys.ProcessorService;
+        return client;
+    }
+
     private static Task<WebSocket> ConnectAsync(JobServiceFactory factory) =>
-        factory.Server.CreateWebSocketClient().ConnectAsync(EndpointUri, CancellationToken.None);
+        ProcessorSocket(factory.Server).ConnectAsync(EndpointUri, CancellationToken.None);
 
     private static Task SendAsync(WebSocket socket, ProcessorEventEnvelope envelope) =>
         SendRawAsync(socket, ProcessorEventSerializer.Serialize(envelope));
@@ -121,9 +131,28 @@ public sealed class ProcessorEventsEndpointTests : IClassFixture<JobServiceFacto
     }
 
     [Fact]
+    public async Task WebSocket_without_a_key_is_rejected()
+    {
+        var connect = () => _factory.Server.CreateWebSocketClient().ConnectAsync(EndpointUri, CancellationToken.None);
+
+        await connect.Should().ThrowAsync<InvalidOperationException>().WithMessage("*401*");
+    }
+
+    [Fact]
+    public async Task WebSocket_with_a_client_key_is_forbidden()
+    {
+        var client = _factory.Server.CreateWebSocketClient();
+        client.ConfigureRequest = request => request.Headers[ApiKeyAuthenticationHandler.HeaderName] = TestApiKeys.Operator;
+
+        var connect = () => client.ConnectAsync(EndpointUri, CancellationToken.None);
+
+        await connect.Should().ThrowAsync<InvalidOperationException>().WithMessage("*403*");
+    }
+
+    [Fact]
     public async Task Plain_http_request_is_rejected()
     {
-        using var client = _factory.CreateClient();
+        using var client = _factory.CreateClient().WithApiKey(TestApiKeys.ProcessorService);
 
         (await client.GetAsync("/ws/processor-events")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -134,7 +163,7 @@ public sealed class ProcessorEventsEndpointTests : IClassFixture<JobServiceFacto
         using var failingFactory = _factory.WithWebHostBuilder(builder =>
             builder.ConfigureTestServices(services =>
                 services.AddSingleton<IJobRepository>(new ProcessorEventHandlerTests.ThrowingJobRepository())));
-        using var socket = await failingFactory.Server.CreateWebSocketClient().ConnectAsync(EndpointUri, CancellationToken.None);
+        using var socket = await ProcessorSocket(failingFactory.Server).ConnectAsync(EndpointUri, CancellationToken.None);
 
         await SendAsync(socket, ProcessorEventHandlerTests.Started(Guid.NewGuid()));
 
