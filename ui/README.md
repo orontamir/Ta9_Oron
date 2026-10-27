@@ -16,7 +16,11 @@ delete it, page through the per-document results, and see the audit entry.
 | With the whole stack (Docker) | `docker compose up --build -d` (repository root) | http://localhost:4200 |
 | Development server (services running on 5001 / 5003) | `npm ci` then `npm start` | http://localhost:4200 |
 
-Requires Node.js 18.13+ or 20.9+ for local builds; the Docker build needs nothing on the host.
+The Docker build needs nothing on the host (tested with Node 20 in the image; local builds work with Node 20–24).
+
+**Restricted networks.** If npm cannot download packages (TLS inspection), `scripts/docker-up-prebuilt.ps1` packages
+the committed build output in `prebuilt/` instead: no npm needed. After changing the UI, refresh it on a machine where
+npm works: `npm ci && npm run build:prebuilt`.
 
 ## Test
 

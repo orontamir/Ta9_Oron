@@ -1,6 +1,7 @@
-# For networks where npm cannot reach the registry inside Docker (TLS inspection): build on the host first
-# (npm ci && npm run build), then this image only packages dist/ — see scripts/docker-up-prebuilt.ps1.
+# For networks where npm cannot reach the registry (TLS inspection, blocked downloads): packages the committed
+# build output in ui/prebuilt, so neither Docker nor the host needs npm. Used by scripts/docker-up-prebuilt.ps1.
+# Refresh it after UI changes on a machine where npm works: npm ci && npm run build:prebuilt
 FROM nginxinc/nginx-unprivileged:1.27-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY dist/ta9-ui/browser /usr/share/nginx/html
+COPY prebuilt/browser /usr/share/nginx/html
 EXPOSE 8080
