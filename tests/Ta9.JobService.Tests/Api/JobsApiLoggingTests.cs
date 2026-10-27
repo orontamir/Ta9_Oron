@@ -36,8 +36,9 @@ public sealed class JobsApiLoggingTests(JobServiceFactory factory) : IClassFixtu
         created.Service.Should().Be("job-service");
         created.CorrelationId.Should().Be("create-logs-1");
         created.JobId.Should().Be(jobId.ToString());
-        factory.Logs.Records.Should().Contain(r => r.Level == "Debug" && r.Message == $"Stored 2 documents of job {jobId}" && r.CorrelationId == "create-logs-1");
-        factory.Logs.Records.Should().Contain(r => r.Message.StartsWith("HTTP POST /api/jobs responded 201") && r.CorrelationId == "create-logs-1");
+        await factory.Logs.WaitForAsync(r => r.Level == "Debug" && r.Message == $"Stored 2 documents of job {jobId}" && r.CorrelationId == "create-logs-1");
+        // The request line is written after the response is sent (end of the middleware), so wait for it too.
+        await factory.Logs.WaitForAsync(r => r.Message.StartsWith("HTTP POST /api/jobs responded 201") && r.CorrelationId == "create-logs-1");
     }
 
     [Fact]
