@@ -23,5 +23,5 @@ Work proceeds in small steps. Each step ends with **green tests and a commit**, 
 
 ## Environment prerequisites (this workstation)
 - The .NET 8 SDK is not installed. It goes into `~/.dotnet` with `dotnet-install.sh`, so no root is needed.
-- nuget.org is not reachable from this network. Packages come through the internal Artifactory mirror, configured in the **user-level** `~/.nuget/NuGet/NuGet.Config` only. The repo itself contains no feed configuration or credentials, and it builds against nuget.org anywhere else.
+- nuget.org is not reachable from this network. Packages come through an internal package mirror, configured in the **user-level** `~/.nuget/NuGet/NuGet.Config` only. The repo itself contains no feed configuration or credentials, and it builds against nuget.org anywhere else.
 - Docker here is Podman-compatible. Testcontainers needs `DOCKER_HOST` pointed at the Podman socket.
