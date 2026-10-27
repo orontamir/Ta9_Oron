@@ -145,6 +145,8 @@ Expected response: **201 Created**, with the new job in status `Pending`. **Copy
 { "id": "2779dc13-07dc-45af-8aba-24d8928cd376", "name": "my first job", "status": "Pending", "totalDocuments": 2, "processedDocuments": 0, ... }
 ```
 
+![Swagger: POST /api/jobs → 201 Created](images/swagger-create-201.png)
+
 ### 4.3 Check the status and read the results
 
 | Step | Operation | Parameters | Expected |
@@ -166,6 +168,8 @@ Errors come back as standard *ProblemDetails* JSON (`application/problem+json`) 
 { "title": "One or more validation errors occurred.", "status": 400,
   "errors": { "documents": ["At least one document is required."] } }
 ```
+
+![Swagger: a validation error (400) with the field that is wrong](images/swagger-400-errors.png)
 
 | Code | Meaning |
 |---|---|
