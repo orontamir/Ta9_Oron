@@ -15,6 +15,18 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed for $project" }
     }
 
+    Write-Host "Building the UI (ui/dist)..."
+    Push-Location (Join-Path $root "ui")
+    try {
+        npm ci --no-audit --no-fund
+        if ($LASTEXITCODE -ne 0) { throw "npm ci failed (Node.js 18.13+ or 20.9+ is required for the prebuilt path)" }
+        npx ng build --configuration production
+        if ($LASTEXITCODE -ne 0) { throw "ng build failed" }
+    }
+    finally {
+        Pop-Location
+    }
+
     docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build -d
     if ($LASTEXITCODE -ne 0) { throw "docker compose failed" }
     docker compose ps

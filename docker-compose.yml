@@ -2,6 +2,7 @@
 #   Job Service       http://localhost:5001/swagger
 #   Processor Service http://localhost:5002/swagger
 #   Audit Service     http://localhost:5003/swagger
+#   Web UI            http://localhost:4200
 #   MongoDB           mongodb://localhost:27017
 
 name: ta9
@@ -100,6 +101,25 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  ui:
+    # Angular console. nginx serves it and forwards /api/jobs and /api/audit to the services (one origin, no CORS).
+    restart: unless-stopped
+    build:
+      context: ./ui
+    image: ta9/ui
+    ports:
+      - "4200:8080"
+    depends_on:
+      job-service:
+        condition: service_healthy
+      audit-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/"]
       interval: 5s
       timeout: 3s
       retries: 20

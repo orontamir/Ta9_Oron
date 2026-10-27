@@ -1,0 +1,4 @@
+{
+  "/api/jobs": { "target": "http://localhost:5001", "secure": false, "changeOrigin": true },
+  "/api/audit": { "target": "http://localhost:5003", "secure": false, "changeOrigin": true }
+}

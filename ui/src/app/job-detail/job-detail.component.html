@@ -1,0 +1,97 @@
+<section class="card">
+  <div class="toolbar">
+    <h1>Job {{ job()?.name || '' }}</h1>
+    <div class="toolbar-actions">
+      @if (canCancel) {
+        <button type="button" class="danger" (click)="cancel()" [disabled]="busy()">Cancel job</button>
+      }
+      @if (canDelete) {
+        <button type="button" class="danger secondary" (click)="delete()" [disabled]="busy()">Delete</button>
+      }
+      <a routerLink="/jobs" class="button secondary">Back to jobs</a>
+    </div>
+  </div>
+
+  @if (error(); as message) {
+    <p class="alert" role="alert">{{ message }}</p>
+  }
+
+  @if (job(); as j) {
+    <dl class="facts">
+      <div><dt>Status</dt><dd><app-status-badge [status]="j.status" />
+        @if (live()) { <span class="live" title="Live updates (Server-Sent Events)">● live</span> }</dd></div>
+      <div><dt>Progress</dt><dd><app-progress-bar [processed]="j.processedDocuments" [total]="j.totalDocuments" /></dd></div>
+      <div><dt>Id</dt><dd class="mono">{{ j.id }}</dd></div>
+      <div><dt>Created</dt><dd>{{ j.createdAt | date: 'medium' }}</dd></div>
+      <div><dt>Started</dt><dd>{{ (j.startedAt | date: 'medium') ?? '—' }}</dd></div>
+      <div><dt>Finished</dt><dd>{{ (j.completedAt | date: 'medium') ?? '—' }}</dd></div>
+      @if (j.summary; as s) {
+        <div><dt>Summary</dt><dd>{{ s.succeeded }} succeeded · {{ s.failed }} failed · {{ s.totalWords | number }} words · {{ s.durationMs | number }} ms</dd></div>
+      }
+      @if (j.failureReason) {
+        <div><dt>Failure</dt><dd class="danger-text">{{ j.failureReason }}</dd></div>
+      }
+    </dl>
+
+    @if (j.status === 'Completed') {
+      <h2>Results</h2>
+      <table class="table compact">
+        <thead>
+          <tr>
+            <th class="num">#</th>
+            <th>Document</th>
+            <th class="num">Words</th>
+            <th class="num">Unique</th>
+            <th>Top 5 words</th>
+            <th class="num">Chars</th>
+            <th class="num">Lines</th>
+            <th>Longest word</th>
+            <th>SHA-256</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (r of results(); track r.index) {
+            <tr [class.failed-row]="r.result?.status === 'Failed'">
+              <td class="num">{{ r.index }}</td>
+              <td>{{ r.name }}</td>
+              @if (r.result?.status === 'Failed') {
+                <td colspan="7" class="danger-text">{{ r.result?.error }}</td>
+              } @else {
+                <td class="num">{{ r.result?.wordCount }}</td>
+                <td class="num">{{ r.result?.uniqueWordCount }}</td>
+                <td>{{ topWords(r) }}</td>
+                <td class="num">{{ r.result?.characterCount }}</td>
+                <td class="num">{{ r.result?.lineCount }}</td>
+                <td>{{ r.result?.longestWord || '—' }}</td>
+                <td class="mono" [title]="r.result?.sha256 ?? ''">{{ shortHash(r.result?.sha256 ?? null) }}</td>
+              }
+            </tr>
+          }
+        </tbody>
+      </table>
+      <div class="pager">
+        <button type="button" class="secondary" (click)="loadResults(resultsPage() - 1)" [disabled]="resultsPage() <= 1">‹ Previous</button>
+        <span>Page {{ resultsPage() }} of {{ resultsPageCount }} · {{ resultsTotal() }} documents</span>
+        <button type="button" class="secondary" (click)="loadResults(resultsPage() + 1)" [disabled]="resultsPage() >= resultsPageCount">Next ›</button>
+      </div>
+    }
+
+    @if (isTerminal(j.status)) {
+      <h2>Audit entry</h2>
+      @if (audit(); as a) {
+        <dl class="facts">
+          <div><dt>Status</dt><dd>{{ a.status }}</dd></div>
+          <div><dt>Documents</dt><dd>{{ a.succeededDocuments }} succeeded · {{ a.failedDocuments }} failed of {{ a.totalDocuments }}</dd></div>
+          <div><dt>Words</dt><dd>{{ a.totalWords | number }}</dd></div>
+          <div><dt>Recorded</dt><dd>{{ a.recordedAt | date: 'medium' }}</dd></div>
+        </dl>
+      } @else if (auditPending()) {
+        <p class="muted">Waiting for the Audit Service…</p>
+      } @else {
+        <p class="muted">Not recorded yet. <button type="button" class="link" (click)="loadAudit()">Check again</button></p>
+      }
+    }
+  } @else if (!error()) {
+    <p class="muted">Loading…</p>
+  }
+</section>

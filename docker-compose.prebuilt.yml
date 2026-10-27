@@ -1,6 +1,6 @@
 # Override for restricted networks: package host-published binaries instead of building inside Docker.
 #   ./scripts/docker-up-prebuilt.ps1
-# (= dotnet publish to ./artifacts, then: docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build)
+# (= dotnet publish to ./artifacts, ng build to ui/dist, then: docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build)
 
 services:
   job-service:
@@ -12,3 +12,6 @@ services:
   audit-service:
     build:
       dockerfile: Dockerfile.prebuilt
+  ui:
+    build:
+      dockerfile: Dockerfile.prebuilt   # packages ui/dist built on the host (npm ci && npx ng build)

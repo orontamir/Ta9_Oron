@@ -1,0 +1,56 @@
+<section class="card">
+  <div class="toolbar">
+    <h1>New job</h1>
+    <a routerLink="/jobs" class="button secondary">Back to jobs</a>
+  </div>
+
+  <form (ngSubmit)="submit()">
+    <label class="field">
+      Job name <span class="muted">(optional)</span>
+      <input [(ngModel)]="name" name="jobName" maxlength="300" placeholder="e.g. quarterly reports" />
+    </label>
+
+    <div class="toolbar sub">
+      <h2>Documents ({{ documents.length }})</h2>
+      <div class="toolbar-actions">
+        <label class="button secondary file-button">
+          Load .txt files
+          <input type="file" accept=".txt,text/plain" multiple (change)="addFiles($event)" hidden />
+        </label>
+        <span class="inline">
+          <input type="number" min="1" [max]="limits.maxDocuments" [(ngModel)]="sampleCount" name="sampleCount" class="narrow" />
+          <button type="button" class="secondary" (click)="generateSample()">Generate sample</button>
+        </span>
+        <button type="button" class="secondary" (click)="addDocument()">+ Add document</button>
+      </div>
+    </div>
+
+    @if (documents.length <= 20) {
+      @for (doc of documents; let i = $index; track i) {
+        <div class="document">
+          <div class="document-head">
+            <input [(ngModel)]="doc.name" [name]="'docName' + i" placeholder="name.txt" />
+            <button type="button" class="link danger" (click)="removeDocument(i)" aria-label="Remove document">Remove</button>
+          </div>
+          <textarea [(ngModel)]="doc.content" [name]="'docContent' + i" rows="4" placeholder="Document text (may be empty)"></textarea>
+        </div>
+      }
+    } @else {
+      <p class="muted">{{ documents.length }} documents ready (the editor is hidden above 20 documents).
+        <button type="button" class="link" (click)="documents = []">Clear</button></p>
+    }
+
+    @for (problem of problems; track problem) {
+      <p class="hint">{{ problem }}</p>
+    }
+    @if (error(); as message) {
+      <p class="alert" role="alert">{{ message }}</p>
+    }
+
+    <div class="form-actions">
+      <button type="submit" [disabled]="problems.length > 0 || submitting()">
+        {{ submitting() ? 'Creating…' : 'Create job' }}
+      </button>
+    </div>
+  </form>
+</section>

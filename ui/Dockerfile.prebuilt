@@ -1,0 +1,6 @@
+# For networks where npm cannot reach the registry inside Docker (TLS inspection): build on the host first
+# (npm ci && npx ng build), then this image only packages dist/ — see scripts/docker-up-prebuilt.ps1.
+FROM nginxinc/nginx-unprivileged:1.27-alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY dist/ta9-ui/browser /usr/share/nginx/html
+EXPOSE 8080
