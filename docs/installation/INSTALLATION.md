@@ -4,7 +4,7 @@
 |---|---|
 | **System** | Job Service (:5001) · Processor Service (:5002) · Audit Service (:5003) · MongoDB (:27017) · Web UI (:4200) |
 | **Stack** | .NET 8 · ASP.NET Core · MongoDB 7 · Angular 17 + nginx (Web UI) · Docker / Docker Compose |
-| **Repository** | https://github.com/orontamir/Ta9_Oron |
+| **Repository** | https://github.com/orontamir/Ta9_OronTamir_HomeAssignment (branch **`dev`**) |
 | **Related documents** | `README.md` (overview) · `docs/hld/TA9-HLD.docx` (High-Level Design) · `docs/logging/TA9-Logging-Observability.docx` (logs in detail) |
 | **Using the system** | `docs/user-guide/TA9-User-Guide.docx`: Web UI, Swagger and Postman, step by step |
 | **If something goes wrong** | **§5 Troubleshooting — where to look** (does not start · stuck · crashes) |
@@ -77,10 +77,28 @@ dotnet --list-sdks         # 8.0.xxx
 
 ### 2.5 Get the source code
 
+**1. Clone the repository** (SSH):
+
 ```powershell
-git clone https://github.com/orontamir/Ta9_Oron.git
-cd Ta9_Oron
+git clone git@github.com:orontamir/Ta9_OronTamir_HomeAssignment.git
 ```
+
+If this fails with `Permission denied (publickey)`, the machine has no SSH key registered with GitHub. Clone over HTTPS instead. Git Credential Manager signs you in through the browser if needed (see §6.9):
+
+```powershell
+git config --global credential.helper manager
+git clone https://github.com/orontamir/Ta9_OronTamir_HomeAssignment.git
+```
+
+**2. Switch to the `dev` branch**, which holds the submitted version:
+
+```powershell
+cd Ta9_OronTamir_HomeAssignment
+git checkout dev
+git log --oneline -3          # check: the latest commits are listed
+```
+
+All commands in this guide run from this folder (where `docker-compose.yml` is).
 
 ## 3. Deploy (local .NET)
 
@@ -450,8 +468,8 @@ For a repository downloaded as a ZIP, `Get-ChildItem -Recurse .\scripts | Unbloc
 **Symptom:**
 
 ```text
-remote: Permission to orontamir/Ta9_Oron.git denied to <other-account>.
-fatal: unable to access 'https://github.com/orontamir/Ta9_Oron.git/': The requested URL returned error: 403
+remote: Permission to orontamir/Ta9_OronTamir_HomeAssignment.git denied to <other-account>.
+fatal: unable to access 'https://github.com/orontamir/Ta9_OronTamir_HomeAssignment.git/': The requested URL returned error: 403
 ```
 
 **Cause:** Git Credential Manager (or a `GIT_ASKPASS` helper) supplies cached credentials of a different GitHub account, e.g. a work account, for every `github.com` URL.
@@ -459,7 +477,7 @@ fatal: unable to access 'https://github.com/orontamir/Ta9_Oron.git/': The reques
 **Fix:** Put the intended user name in the remote URL so the credential manager asks for that account. Sign in with a browser session or a Personal Access Token (*Contents: Read and write*) of that account:
 
 ```powershell
-git remote set-url origin https://orontamir@github.com/orontamir/Ta9_Oron.git
+git remote set-url origin https://orontamir@github.com/orontamir/Ta9_OronTamir_HomeAssignment.git
 git push -u origin main
 ```
 
@@ -530,6 +548,26 @@ Environment variables such as `GIT_AUTHOR_EMAIL` override `git config`. If they 
 | Typing `npm` opens a Windows **"Select an app to open 'npm'"** dialog | PowerShell found the extension-less `npm` shell script instead of `npm.cmd` / `npm.ps1` (scripts blocked, or `.CMD` missing from `PATHEXT`) | Use `npm.cmd`, or `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` and a new PowerShell; check that `$env:PATHEXT` contains `.CMD`. The helper script already uses `npm.cmd` |
 | `npm -v` prints nothing | npm is missing from the Node installation | Reinstall Node.js LTS from nodejs.org with *npm package manager* selected |
 | `The Angular CLI requires…` / unsupported Node warning | Angular 17 officially lists Node 18 / 20 | Node 24 works (tested); the warning can be ignored |
+
+### 6.9 git clone: Permission denied (publickey)
+
+```text
+git@github.com: Permission denied (publickey).
+fatal: Could not read from remote repository.
+```
+
+**Cause:** an SSH address (`git@github.com:…`) needs an SSH key that is registered with your GitHub account, and this machine has none. A related message is `Permission to … denied to <other-account>`: SSH used another account's key.
+
+**Fix:** clone over HTTPS with Git Credential Manager. It signs you in through the browser; make sure the browser is signed in to the right GitHub account before clicking *Authorize*.
+
+```powershell
+git config --global credential.helper manager
+git clone https://github.com/orontamir/Ta9_OronTamir_HomeAssignment.git
+cd Ta9_OronTamir_HomeAssignment
+git checkout dev
+```
+
+To keep using SSH instead: `ssh-keygen -t ed25519`, add the `.pub` file under GitHub → *Settings → SSH and GPG keys*, then check with `ssh -T git@github.com`.
 
 ## 7. Uninstall
 
