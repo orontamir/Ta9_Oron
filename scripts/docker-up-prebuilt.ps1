@@ -19,11 +19,13 @@ try {
     if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
         throw "Node.js is not installed (needed to build the UI on the host): install the LTS from https://nodejs.org"
     }
-    Write-Host "  node $(node -v), npm $(npm -v)"
+    # npm.cmd on Windows: avoids PowerShell picking the extension-less "npm" shell script, or a blocked npm.ps1.
+    $npm = if ($env:OS -eq "Windows_NT") { "npm.cmd" } else { "npm" }
+    Write-Host "  node $(node -v), npm $(& $npm -v)"
     $ui = Join-Path $root "ui"
     Push-Location $ui
     try {
-        npm ci --no-audit --no-fund
+        & $npm ci --no-audit --no-fund
         if ($LASTEXITCODE -ne 0) { throw "npm ci failed (exit code $LASTEXITCODE)" }
         node node_modules/@angular/cli/bin/ng.js build --configuration production
         if ($LASTEXITCODE -ne 0) { throw "ng build failed (exit code $LASTEXITCODE)" }
