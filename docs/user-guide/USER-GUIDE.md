@@ -201,11 +201,15 @@ The addresses are collection variables (`jobsUrl` = `http://localhost:5001`, `au
 
 Open a request in the sidebar and click **Send**. The response appears in the lower half of the window. The **Test Results** tab shows the request's built-in checks, for example `201 Created` and `status is Pending`. Within a folder, send the requests from top to bottom.
 
+![Postman: the collection in the sidebar, and Create job with its 201 response (Test Results 2/2)](images/postman-create-job.png)
+
 ### 5.4 Run a whole folder automatically
 
 1. Right-click a folder (or the whole collection), then **Run**.
 2. In the **Collection Runner**, keep the order and click **Run**.
 3. Each request is sent in turn, and its checks are marked pass or fail.
+
+![Postman Collection Runner: each request with its status code and checks](images/postman-runner.png)
 
 In folder 1, *Get results* accepts both `200` and `409`: the runner may reach it a moment before the job completes. If you see `409`, run that request again.
 
