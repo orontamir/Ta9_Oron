@@ -7,7 +7,7 @@
 | **Stack** | C# / .NET 8 · ASP.NET Core · MongoDB 7 · Docker Compose |
 | **Diagrams** | Editable source: [`diagrams/ta9-hld.drawio`](diagrams/ta9-hld.drawio) (one page per diagram). Open with [app.diagrams.net](https://app.diagrams.net) or the VS Code *Draw.io Integration* extension. PNG renderings are in [`images`](images) |
 | **Detailed design** | [`../design`](../design) — architecture, API contracts, reliability, decision log (D1–D26) |
-| **Topic documents** | Concurrency (`../concurrency`), WebSocket behavior (`../websocket`), Storage (`../storage`), **Logging & Observability** (`../logging`) |
+| **Topic documents** | Concurrency (`../concurrency`), WebSocket behavior (`../websocket`), Storage (`../storage`), **Logging & Observability** (`../logging`), **Limitations & production roadmap** (`../limitations`) |
 
 | draw.io page | Section |
 |---|---|
@@ -21,6 +21,7 @@
 | 9. WebSocket — Connection & Outbox | [§9.2 Reliability](#92-reliability) |
 | 10. Storage | [§5.1 Data model](#51-data-model-mongodb) |
 | 11. Logging | [§9.4 Observability](#94-observability) |
+| 12. Production Architecture | [§11 Risks, limitations and future work](#11-risks-limitations-and-future-work) |
 
 ---
 
@@ -218,6 +219,12 @@ Full analysis with diagrams, advantages, limitations and alternatives: [`../conc
 - **Logs:** console → `docker compose logs`; all services → MongoDB `ta9_logs.logs` (`Logging__Mongo__ConnectionString: mongodb://mongo:27017`). Troubleshooting order: `docker compose ps` → `docker compose logs` → `ta9_logs.logs` → `/health/ready` (Installation Guide §5).
 
 ## 11. Risks, limitations and future work
+
+The complete list, grouped by area with IDs, and a prioritized production roadmap: [`../limitations/LIMITATIONS.md`](../limitations/LIMITATIONS.md). The table below keeps the main risks.
+
+*draw.io page **12. Production Architecture***
+
+![Production architecture — today vs proposed](images/production-architecture.png)
 
 | Risk / limitation | Mitigation today | Future work |
 |---|---|---|

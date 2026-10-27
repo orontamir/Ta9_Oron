@@ -13,6 +13,8 @@ For each document the processor computes the word count, unique word count, top-
 > **WebSocket disconnect/reconnect behavior** (outbox, acks, backoff, idempotency, reconciler, tests): [`docs/websocket/WEBSOCKET.md`](docs/websocket/WEBSOCKET.md) · Word: [`TA9-WebSocket-Behavior.docx`](docs/websocket/TA9-WebSocket-Behavior.docx).
 > **Concurrency & Performance** (chosen strategy, advantages, limitations, diagrams): [`docs/concurrency/CONCURRENCY.md`](docs/concurrency/CONCURRENCY.md) · Word: [`TA9-Concurrency-Performance.docx`](docs/concurrency/TA9-Concurrency-Performance.docx).
 > **Storage** (interfaces, InMemory + MongoDB, data model, outage handling, how to replace it, tests): [`docs/storage/STORAGE.md`](docs/storage/STORAGE.md) · Word: [`TA9-Storage.docx`](docs/storage/TA9-Storage.docx).
+> **AI usage disclosure** (tools, workflow, prompts, changed/rejected AI suggestions): [`docs/ai-usage/AI-USAGE.md`](docs/ai-usage/AI-USAGE.md) · Word: [`TA9-AI-Usage.docx`](docs/ai-usage/TA9-AI-Usage.docx).
+> **Known limitations & production improvements** (by area, roadmap, production architecture diagram): [`docs/limitations/LIMITATIONS.md`](docs/limitations/LIMITATIONS.md) · Word: [`TA9-Limitations-Production.docx`](docs/limitations/TA9-Limitations-Production.docx).
 > **Logging & Observability** (console + MongoDB, levels, correlation, tests): [`docs/logging/LOGGING.md`](docs/logging/LOGGING.md) · Word: [`TA9-Logging-Observability.docx`](docs/logging/TA9-Logging-Observability.docx). **Something does not start, hangs or crashes?** See the Installation Guide §5 *Troubleshooting — where to look*.
 > **Software Test Description (STD)**: test strategy, environment, traceability to the requirements, all 311 automated test cases (440 executions), manual procedures and defects: [`docs/testing/STD.md`](docs/testing/STD.md) · Word: [`TA9-STD.docx`](docs/testing/TA9-STD.docx).
 > **Installation Guide** (prerequisites, local and Docker Desktop deployment, troubleshooting, errors encountered and fixes): [`docs/installation/INSTALLATION.md`](docs/installation/INSTALLATION.md) · Word: [`TA9-Installation-Guide.docx`](docs/installation/TA9-Installation-Guide.docx).
@@ -150,15 +152,24 @@ Full description: [`docs/logging/LOGGING.md`](docs/logging/LOGGING.md). Where to
 - **Health:** `/health/live` and `/health/ready` (storage, processor WS link). Used by the docker-compose health checks.
 
 ## 9. Known limitations and what I would improve for production
-- **Single instance for the in-process fan-out:** the SSE broadcaster and the WS fan-in are per instance. With several Job Service instances, publish job changes through Redis pub/sub or a broker.
-- **Processor state is in memory:** queued work and its outbox are lost on restart. The reconciler recovers it, at the cost of up to about 60s of latency. A broker (RabbitMQ or Kafka) with durable queues would replace the REST dispatch, the WS events and the reconciler.
-- **No authentication/authorization** (out of scope). Production would use JWT for the public API and mTLS or a shared secret for the service-to-service WS and REST.
-- **No rate limiting or tenant quotas** on the public API.
-- **Metrics/tracing:** add OpenTelemetry (traces across the HTTP/WS hops; metrics for queue depth, dispatch latency, outbox size). Logs share the MongoDB server with the data; production would ship the console JSON to a dedicated log platform.
-- Swagger is enabled in every environment for this POC.
-- A job deleted before its audit summary is published is never audited.
-- Very long processor outages: jobs stay `Queued`/`Processing` and are only rechecked. A maximum age before failing could be added.
-- The prebuilt Docker path exists only because of a TLS-inspecting network. The standard multi-stage build is the intended one.
+Full list (about 40 items with IDs, impact, today's mitigation and the production fix), a prioritized roadmap and a today-vs-proposed architecture diagram: [`docs/limitations/LIMITATIONS.md`](docs/limitations/LIMITATIONS.md) · Word: [`TA9-Limitations-Production.docx`](docs/limitations/TA9-Limitations-Production.docx).
+
+**Main limitations**
+- **One Job Service instance (SC-1).** SSE fan-out and the WS fan-in are per instance. Dispatch and updates are already multi-instance safe (leases, optimistic concurrency).
+- **Processor state and outbox are in memory (SC-2, RE-1).** A restart loses queued work and unacked events. The reconciler recovers them within ~1–2 minutes.
+- **No authentication, no TLS, no rate limiting (SE-1…SE-5).** Out of scope by assignment.
+- **Single MongoDB node without auth or backups (ST-1).** Logs share it with the data (ST-3).
+- **No metrics, traces or alerts (LG-1, LG-2).** Structured logs and health checks only.
+- **Fixed concurrency limits and inline payloads (SC-3, SC-4).** Bounded and protected by input limits, but not adaptive.
+- **`POST /api/jobs` has no idempotency key (API-1).** A client retry can create a duplicate job.
+- **Docker Compose on one host, no CI/CD (OP-1, OP-2).**
+
+**What I would do for production**
+1. **P1, before production traffic:** API gateway with OIDC/JWT, TLS and rate limits; mTLS between services; MongoDB replica set with auth, TLS and backups; `Idempotency-Key`; CI/CD with image scanning; OpenTelemetry metrics, traces and alerts.
+2. **P2, scale:** a durable broker (RabbitMQ/Kafka) for jobs and events; several Job Service instances with Redis pub/sub for SSE; Kubernetes with processors autoscaled on queue depth; object storage for document content; a dedicated log platform; retention policies.
+3. **P3, refinements:** keyset paging, circuit breakers, a maximum job age, runtime log levels, API versioning, webhooks, load and chaos tests in CI.
+
+Most of these steps replace a component rather than redesign the system. Storage is behind interfaces, handlers are idempotent, events are versioned, dispatch is lease-based and the correlation id maps onto W3C tracing.
 
 ## 10. API summary
 | Method | Path | Notes |
@@ -179,25 +190,28 @@ Full contracts: [`docs/design/02-api-and-contracts.md`](docs/design/02-api-and-c
 ---
 
 ## 11. AI Usage
+Full disclosure (tools, workflow, what was generated, how it was verified, 15 representative prompts, 14 changed / rejected / corrected AI outputs, lessons learned): [`docs/ai-usage/AI-USAGE.md`](docs/ai-usage/AI-USAGE.md) · Word: [`TA9-AI-Usage.docx`](docs/ai-usage/TA9-AI-Usage.docx).
 
-**Tools:** Claude Code (Anthropic, Claude Opus 5.5) in a terminal session.
+**Tool:** Claude Code (Anthropic, Claude Opus 5.5) in a terminal session. On my machine: .NET 8 SDK, Docker Desktop, PowerShell, Git, Postman.
 
-**What it was used for**
-- Turning the assignment into a design. The AI listed the grey areas as multiple-choice questions with a recommendation for each; **I made every decision** before any code was written (recorded in `docs/design/04-decisions.md`).
-- Writing the design documents, then the code and tests **step by step** (13 planned steps, each ending with green tests and its own commits), with an explanation of every step so I could review it and explain it.
-- Diagnosing failures. The code was written in an environment without the .NET SDK, so **I built and ran every step on my machine** and fed the failures back.
+**How it was used**
+- The AI turned the assignment into multiple-choice questions with a recommendation for each. **I made every decision** (stack, storage, scope, error semantics, protocol) before any code was written; they are recorded in `docs/design/04-decisions.md` (D1–D27).
+- It then wrote the design documents, and the code and tests **in 13 small steps**, explaining each step to me. Its environment had no .NET SDK, so **I built and ran every step on my machine** and sent back the failures. Nothing was committed before its tests were green.
+- After the build I reviewed the system **against the assignment, section by section**. That review produced the storage fixes and the logging feature (console + MongoDB).
 
-**AI-generated or AI-assisted parts:** essentially all source code, tests, Docker/compose files, scripts and documentation were AI-generated from my decisions and reviewed by me step by step. The architecture choices, the scope (C#/.NET 8, MongoDB, Docker Compose, the Audit bonus) and the trade-offs were mine.
+**AI-generated parts:** essentially all source code, tests, Docker and compose files, scripts, the Postman collection, the documents and the diagrams, all generated from my decisions. I reviewed it step by step and verified it with 440 automated test executions, Docker Desktop deployment, smoke tests and the 10 × 1,000 load.
 
 **Representative prompts** (translated from Hebrew)
-- "We'll write the solution in C# .NET 8, with Docker Compose, include the Audit service, and use MongoDB running as a Docker container. Some parts of the task are grey areas: in your plan, ask me the questions and I'll decide before we write code. Write the code step by step so I can explain to the interviewer what I did, with unit tests for every step, and design documents."
-- "11 tests failed: [pasted test output]" (the Mongo GUID issue below)
-- "[pasted docker build output]" → diagnosis of TLS inspection and the prebuilt packaging path
+- "We'll write the solution in C# .NET 8, with Docker Compose, include the Audit service, and use MongoDB running as a Docker container. Some parts of the task are grey areas: ask me the questions and I'll decide before we write code. Write the code step by step so I can explain to the interviewer what I did, with unit tests for every step, and design documents."
+- "11 tests failed: [pasted test output]"
+- "Storage: we chose MongoDB. Code-wise, do we meet this section's requirement?"
+- "The logs must be saved in MongoDB and printed to the console: Debug to debug crashes, Info to show the flow, Error when there are errors … and add tests that include logs."
 
-**Examples of AI suggestions I changed, rejected or that were corrected**
-1. **Language and stack.** The AI recommended Python + FastAPI because it was the toolchain available in its environment. I rejected that and chose C#/.NET 8, the stack I want to defend in the interview, plus MongoDB as the storage (the AI had not proposed a database).
-2. **MongoDB GUID mapping bug.** The first Mongo repository registered a standard binary GUID serializer. Running the contract suite against a real MongoDB showed 11 failures: every query filtered by id returned nothing, while unfiltered reads worked. The fix stores GUIDs as strings with explicit per-member serializers (decision D22). The InMemory implementation could never have exposed this, which is why the same contract tests run against both stores.
-3. **`[Produces("application/json")]` on a controller** overrode the content type of error responses, so 404s were returned as `application/json` instead of RFC 7807 `application/problem+json`. A test caught it and the attribute was removed.
-4. **Retry mechanism.** The AI's initial plan used in-process Polly retries for dispatch. When implementing the dispatcher it proposed replacing them with retry state persisted in the job plus an atomic lease, and I approved (D24): retries now survive restarts and work with several dispatchers.
-5. **MVC implicit `[Required]`** on non-nullable strings rejected empty document content, which is valid by design, and would have made the processor reject whole jobs. It was disabled in all services so the validators are the single source of input rules (D23).
-6. **Docker build behind TLS inspection.** The multi-stage build failed in my network (`NU1301`). Instead of baking a corporate CA certificate into the image or repo, I kept the standard Dockerfile and added a host-publish + package-only path.
+**AI suggestions I changed or rejected (selection; 14 in the full document)**
+1. **Python + FastAPI**, proposed because it was the AI's own toolchain. Rejected: C#/.NET 8 plus MongoDB, which the AI had not proposed.
+2. **In-process Polly retries.** Replaced, with my approval, by retry state persisted in the job plus atomic leases (D24): retries survive restarts and never double-dispatch.
+3. **Binary GUIDs in MongoDB.** 11 failures against a real MongoDB showed id queries returning nothing; GUIDs are now stored as strings (D22).
+4. **Baking the corporate proxy's CA certificate into the image.** Rejected; added a host-publish, package-only Docker path instead.
+5. **API catching MongoDB driver exceptions.** Changed after my storage review into a storage-neutral `StorageUnavailableException` (D25).
+6. **Request logging on Serilog's static logger, and exception handling before the correlation middleware.** Both found by the logging tests I asked for (D-06, D-07) and fixed.
+

@@ -306,4 +306,48 @@ Tests marked as requiring Docker run with `Category=Integration` (Testcontainers
 """
 replace_section(ROOT / "docs/logging/LOGGING.md", "## 5. Tests for this section", None, logging_md)
 
-print("concurrency + websocket + storage + logging test chapters written")
+# ------------------------------------------------------------------ Known limitations & production improvements
+LIMITS = [
+    ("ProcessApiTests", u("Post returns 503 with retry after when queue is full")),
+    ("ChannelJobQueueTests", u("Rejects when capacity is reached")),
+    ("JobDispatcherTests", u("Busy processor delays the job without consuming an attempt", "Unreachable processor backs off then fails the job",
+                             "A crashed dispatch is retried after the lease expires")),
+    ("JobRepositoryContract", u("Concurrent claims never hand out the same job twice", "Concurrent updates never lose a write")),
+    ("JobReconcilerTests", u("Job lost by a restarted processor is redispatched", "Job lost too many times fails", "Lost completion event is recovered with results")),
+    ("EventOutboxTests", u("Rejects lifecycle events beyond capacity")),
+    ("WebSocketJobEventPublisherTests", u("Full outbox does not throw")),
+    ("ProcessorEventHandlerTests", u("Replayed completion is ignored", "Newer schema version is ignored")),
+    ("CreateJobRequestValidatorTests", u("Rejects too many documents with a single error")),
+    ("JobsApiTests", u("Create with oversized document is rejected")),
+    ("BatchingLogSinkTests", u("Full buffer drops events without blocking and reports the count")),
+    ("JobsApiStorageFailureTests", u("Storage timeout returns 503 problem")),
+    ("EndToEndTests", u("Job lost by a processor restart is redispatched and completes", "Ten concurrent jobs of 1000 documents complete with bounded parallelism")),
+]
+limits_md = f"""## 5. Tests for this section
+
+{INTRO.format(what='the current limits and the mitigations described in this document')}
+A limitation cannot be "tested away"; these tests pin **the documented behavior at each limit**, so that the mitigations in §2 are real and stay real.
+
+### 5.1 What is verified
+
+| Limitation (§2) | Documented mitigation | Verified by |
+|---|---|---|
+| SC-3 fixed limits | Overload becomes 503 + `Retry-After`, honored without counting a failure | `ProcessApiTests`, `ChannelJobQueueTests`, `JobDispatcherTests` |
+| SC-1 single instance | Dispatch and updates are already multi-instance safe | `JobRepositoryContract` (concurrent claims and updates, InMemory + MongoDB) |
+| SC-2 / RE-1 in-memory processor state and outbox | The reconciler recovers lost jobs and lost events; repeated loss fails the job | `JobReconcilerTests`, E2E processor restart |
+| RE-2 bounded outbox | Full outbox rejects and logs, never throws | `EventOutboxTests`, `WebSocketJobEventPublisherTests` |
+| RE-3 resends / duplicates; API-2 versioning | Duplicates and newer schema versions are ignored safely | `ProcessorEventHandlerTests` |
+| SC-4 large payloads | Hard input limits are enforced | `CreateJobRequestValidatorTests`, `JobsApiTests` |
+| ST-3 / LG-3 logging limits | A full log buffer drops and reports, never blocks | `BatchingLogSinkTests` |
+| ST-1 storage outage | 503 *Storage unavailable* | `JobsApiStorageFailureTests` |
+| The required scale works within the limits | 10 × 1,000 documents with bounded parallelism | E2E |
+
+### 5.2 Automated tests
+
+{table(catalog, LIMITS)}
+
+All tests listed here passed in the latest full run (440 / 440, 2026-10-27).
+"""
+replace_section(ROOT / "docs/limitations/LIMITATIONS.md", "## 5. Tests for this section", None, limits_md)
+
+print("concurrency + websocket + storage + logging + limitations test chapters written")

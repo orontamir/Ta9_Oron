@@ -10,7 +10,9 @@
     "concurrency": "node md2docx.js ../../docs/concurrency/CONCURRENCY.md ../../docs/concurrency/TA9-Concurrency-Performance.docx \"Concurrency & Performance\" \"TA9 Real-Time Document Processing System\" \"TA9 Document Processing \u2014 Concurrency & Performance\"",
     "websocket": "node md2docx.js ../../docs/websocket/WEBSOCKET.md ../../docs/websocket/TA9-WebSocket-Behavior.docx \"WebSocket Disconnect / Reconnect Behavior\" \"TA9 Real-Time Document Processing System\" \"TA9 Document Processing \u2014 WebSocket Behavior\"",
     "storage": "node md2docx.js ../../docs/storage/STORAGE.md ../../docs/storage/TA9-Storage.docx \"Storage\" \"TA9 Real-Time Document Processing System\" \"TA9 Document Processing \u2014 Storage\"",
-    "logging": "node md2docx.js ../../docs/logging/LOGGING.md ../../docs/logging/TA9-Logging-Observability.docx \"Logging & Observability\" \"TA9 Real-Time Document Processing System\" \"TA9 Document Processing \u2014 Logging & Observability\""
+    "logging": "node md2docx.js ../../docs/logging/LOGGING.md ../../docs/logging/TA9-Logging-Observability.docx \"Logging & Observability\" \"TA9 Real-Time Document Processing System\" \"TA9 Document Processing \u2014 Logging & Observability\"",
+    "limitations": "node md2docx.js ../../docs/limitations/LIMITATIONS.md ../../docs/limitations/TA9-Limitations-Production.docx \"Known Limitations & Production Improvements\" \"TA9 Real-Time Document Processing System\" \"TA9 Document Processing \u2014 Limitations & Production\"",
+    "ai-usage": "node md2docx.js ../../docs/ai-usage/AI-USAGE.md ../../docs/ai-usage/TA9-AI-Usage.docx \"AI Usage Disclosure\" \"TA9 Real-Time Document Processing System\" \"TA9 Document Processing \u2014 AI Usage\""
   },
   "dependencies": {
     "docx": "9.14.0",
